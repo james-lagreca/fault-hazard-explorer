@@ -20,36 +20,40 @@ const validated = oracle.startsWith('openquake');
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..500&family=Newsreader:ital,opsz,wght@0,6..72,400..500&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
-    <div class="wrap app">
-      <!-- APP BAR -->
-      <header class="appbar">
-        <div class="appbar-id">
-          <svg class="mark" viewBox="0 0 28 28" aria-hidden="true">
-            <path d="M1 19 L7 19 L9 11 L12 24 L15 6 L18 19 L27 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
-          </svg>
-          <div class="appbar-titles">
-            <h1>Fault&nbsp;MFD&nbsp;→&nbsp;Hazard</h1>
-            <p>How slip rate, geometry &amp; the magnitude–frequency choice reshape a single fault's hazard curve.</p>
-          </div>
-        </div>
-        <a
-          class={`badge ${validated ? 'ok' : 'prov'}`}
-          href="https://github.com/gem/oq-engine"
-          title="The TypeScript engine is asserted equal to this OpenQuake build in CI"
-        >
-          <span class="dot"></span>{validated ? `validated vs ${oracle}` : oracle}
-        </a>
-      </header>
+    <div class="gov-banner">
+      <strong>Independent research tool</strong> — engine validated against OpenQuake hazardlib in CI.
+    </div>
 
+    <!-- MASTHEAD -->
+    <header class="masthead">
+      <div class="masthead-id">
+        <svg class="mark" viewBox="0 0 28 28" aria-hidden="true">
+          <path d="M1 19 L7 19 L9 11 L12 24 L15 6 L18 19 L27 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
+        </svg>
+        <div class="masthead-titles">
+          <h1>Fault&nbsp;MFD&nbsp;→&nbsp;Hazard</h1>
+          <p>How slip rate, geometry &amp; the magnitude–frequency choice reshape a single fault's hazard curve.</p>
+        </div>
+      </div>
+      <a
+        class={`badge ${validated ? 'ok' : 'prov'}`}
+        href="https://github.com/gem/oq-engine"
+        title="The TypeScript engine is asserted equal to this OpenQuake build in CI"
+      >
+        <span class="dot"></span>{validated ? `validated vs ${oracle}` : oracle}
+      </a>
+    </header>
+
+    <main class="app">
       <!-- THE TOOL (hero) -->
-      <main class="app-main">
+      <div class="app-main">
         <HazardTool />
-      </main>
+      </div>
 
       <!-- REFERENCE STRIP -->
       <section class="reference">
@@ -57,19 +61,19 @@ const validated = oracle.startsWith('openquake');
           <summary>The four distributions <span class="hint">— all balanced to the same moment budget; only the shape differs</span></summary>
           <div class="defs">
             <div class="def">
-              <h3><span class="swatch" style="background:#7a7263"></span>GR — no cap</h3>
+              <h3><span class="swatch" style="background:#7c8288"></span>GR — no cap</h3>
               <p>Pure exponential to a fixed M 7.5, ignoring the fault's area limit. A reference line, inadmissible above the area magnitude.</p>
             </div>
             <div class="def">
-              <h3><span class="swatch" style="background:#1f5fb0"></span>Truncated GR</h3>
+              <h3><span class="swatch" style="background:#005ea2"></span>Truncated GR</h3>
               <p>Exponential 10<sup>−bM</sup> truncated at M<sub>max</sub>, moment-balanced. The workhorse distributed-seismicity model.</p>
             </div>
             <div class="def">
-              <h3><span class="swatch" style="background:#c2410c"></span>Characteristic</h3>
+              <h3><span class="swatch" style="background:#c05600"></span>Characteristic</h3>
               <p>Youngs &amp; Coppersmith (1985): exponential tail plus enhanced rate near M<sub>max</sub>. Concentrates moment at the top.</p>
             </div>
             <div class="def">
-              <h3><span class="swatch" style="background:#0f766e"></span>M<sub>max</sub></h3>
+              <h3><span class="swatch" style="background:#3e8a4e"></span>M<sub>max</sub></h3>
               <p>One characteristic earthquake carrying the whole budget — the fault as a single repeating large rupture.</p>
             </div>
           </div>
@@ -78,15 +82,17 @@ const validated = oracle.startsWith('openquake');
         <details>
           <summary>How to read it <span class="hint">— what the two panels and the markers mean</span></summary>
           <div class="read-grid">
-            <p><b>(a) Cumulative recurrence.</b> N(≥M) per year for each MFD. Concentrating moment near M<sub>max</sub> necessarily starves the moderate magnitudes — watch the characteristic and M<sub>max</sub> lines dip below truncated GR in the middle and rise at the top. The dotted red line marks M<sub>max</sub>.</p>
+            <p><b>(a) Cumulative recurrence.</b> N(≥M) per year for each MFD. Concentrating moment near M<sub>max</sub> necessarily starves the moderate magnitudes — watch the characteristic and M<sub>max</sub> lines dip below truncated GR in the middle and rise at the top. The dotted line marks M<sub>max</sub>.</p>
             <p><b>(b) Hazard at the site.</b> The annual exceedance rate vs PGA those rates produce, with the 475-yr and 2475-yr return periods marked. Which model gives the highest design motion depends on where the controlling return period crosses each curve — and how close the site sits. Pull the distance in and the large-event models tend to take over at 2475&nbsp;yr.</p>
             <p><b>Lock vs segment.</b> Lock M<sub>max</sub> to Wells &amp; Coppersmith (1994) area scaling, or unlock and cap it lower to impose segmentation. Because the moment budget is fixed, capping the largest event doesn't lower hazard everywhere — it redistributes the same moment into more frequent, similar-sized ruptures. <em>Same moment, more often, not bigger.</em></p>
           </div>
         </details>
       </section>
+    </main>
 
-      <!-- FOOTER -->
-      <footer class="colophon">
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="footer-inner">
         <p>
           <b>Engine.</b> TypeScript, moment-balanced incremental MFDs, log-log hazard integral.
           <b>Validation.</b> {validated ? oracle : 'OpenQuake hazardlib'} golden fixtures + Vitest, in CI.
@@ -94,8 +100,8 @@ const validated = oracle.startsWith('openquake');
           to OpenQuake's <code>Allen2012_SS14</code> (toy models retained for comparison).
           <b>Out of scope.</b> multi-fault rupture, disaggregation, full-chain site response.
         </p>
-        <p>Type set in Fraunces, Newsreader &amp; IBM Plex Mono.</p>
-      </footer>
-    </div>
+        <p>Type set in Public Sans &amp; Roboto Mono. <a href="https://github.com/james-lagreca/fault-hazard-explorer">Source on GitHub</a>.</p>
+      </div>
+    </footer>
   </body>
 </html>

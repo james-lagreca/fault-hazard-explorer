@@ -38,7 +38,7 @@
         <div class="ctl"><label for="mmax"><span>M<sub>max</sub></span><span class="val" id="vmmax">—</span></label>
           <input type="range" id="mmax" min="5.5" max="8.0" step="0.01" value="6.79" disabled></div>
         <div class="note" id="scalenote"></div>
-        <div class="seg" id="segnote"></div>
+        <div class="segwarn" id="segnote"></div>
       </div>
 
       <div class="card">
@@ -98,19 +98,7 @@
 </script>
 
 <style>
-  .tool {
-    --card: #fbf8f1;
-    --rule: rgba(22, 19, 13, 0.14);
-    --rule-2: rgba(22, 19, 13, 0.07);
-    --inset: #f1ece1;
-    --ink: #16130d;
-    --ink-2: #524b3c;
-    --ink-3: #8a8270;
-    --seismic: #b4322a;
-    --seismic-soft: rgba(180, 50, 42, 0.1);
-    --mono: 'IBM Plex Mono', ui-monospace, monospace;
-    font-family: var(--mono);
-  }
+  .tool { font-family: var(--font-mono); }
 
   .tool-grid {
     display: grid;
@@ -126,8 +114,8 @@
   @media (min-width: 861px) {
     .controls {
       position: sticky;
-      top: 5.2rem;
-      max-height: calc(100vh - 6rem);
+      top: 4.5rem;
+      max-height: calc(100vh - 5.5rem);
       overflow-y: auto;
       padding-right: 2px;
       scrollbar-width: thin;
@@ -135,23 +123,24 @@
   }
 
   .card {
-    background: var(--card);
-    border: 1px solid var(--rule);
-    border-radius: 10px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     padding: 1.1rem 1.15rem;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
   }
   .controls .card + .card { margin-top: 1rem; }
 
   .eyebrow {
-    font-size: 0.66rem;
-    letter-spacing: 0.2em;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--ink-3);
+    color: var(--ink-muted);
+    font-weight: 500;
     margin: 0 0 0.95rem;
   }
 
-  .u { color: var(--ink-3); font-weight: 400; }
+  /* :global — .u spans are also injected at runtime (readout values) */
+  .tool :global(.u) { color: var(--ink-muted); font-weight: 400; }
 
   /* sliders */
   .ctl { margin-bottom: 1rem; }
@@ -161,79 +150,80 @@
     justify-content: space-between;
     align-items: baseline;
     font-size: 0.78rem;
-    color: var(--ink-2);
+    color: var(--ink-secondary);
     margin-bottom: 0.5rem;
   }
-  .ctl .val { font-size: 0.82rem; color: var(--ink); font-weight: 600; }
+  .ctl .val { font-size: 0.82rem; color: var(--ink); font-weight: 500; }
 
   input[type='range'] {
     -webkit-appearance: none; appearance: none;
     width: 100%; height: 2px; border-radius: 2px;
-    background: var(--rule); outline: none; margin: 0.35rem 0;
+    background: var(--border); outline: none; margin: 0.35rem 0;
   }
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
-    background: var(--seismic); cursor: pointer;
-    border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--seismic);
+    background: var(--primary); cursor: pointer;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px var(--primary);
   }
   input[type='range']::-moz-range-thumb {
-    width: 13px; height: 13px; border-radius: 50%; background: var(--seismic);
-    cursor: pointer; border: 2px solid var(--card);
+    width: 13px; height: 13px; border-radius: 50%; background: var(--primary);
+    cursor: pointer; border: 2px solid #fff;
   }
   input[type='range']:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 4px var(--seismic-soft);
+    box-shadow: 0 0 0 4px var(--primary-wash);
   }
   input[type='range']:disabled { opacity: 0.4; }
-  input[type='range']:disabled::-webkit-slider-thumb { background: var(--ink-3); box-shadow: none; }
+  input[type='range']:disabled::-webkit-slider-thumb { background: var(--border-strong); box-shadow: none; }
 
   /* chips */
   .chips { display: flex; gap: 0.45rem; flex-wrap: wrap; }
   .chip {
-    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.01em;
-    padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--rule);
-    background: var(--inset); color: var(--ink-3); cursor: pointer;
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.01em;
+    padding: 0.4rem 0.6rem; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--panel); color: var(--ink-muted); cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem; transition: 0.14s;
   }
   .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.4; }
-  .chip.on { color: var(--ink); border-color: var(--rule); background: #fff; box-shadow: 0 1px 2px rgba(22,19,13,0.05); }
+  .chip.on { color: var(--ink); border-color: var(--border-strong); background: #fff; }
   .chip.on .dot { opacity: 1; }
-  .chip[data-m='GR'].on { color: #7a7263; }
-  .chip[data-m='TGR'].on { color: #1f5fb0; }
-  .chip[data-m='CHAR'].on { color: #c2410c; }
-  .chip[data-m='MMAX'].on { color: #0f766e; }
-  .chip:focus-visible { outline: 2px solid var(--seismic-soft); outline-offset: 1px; }
+  .chip[data-m='GR'].on .dot { color: var(--c-gr); }
+  .chip[data-m='TGR'].on .dot { color: var(--c-tgr); }
+  .chip[data-m='CHAR'].on .dot { color: var(--c-char); }
+  .chip[data-m='MMAX'].on .dot { color: var(--c-mmax); }
+  .chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
   /* check + select */
   .check {
     display: flex; align-items: flex-start; gap: 0.5rem;
-    font-size: 0.78rem; color: var(--ink-2); cursor: pointer; user-select: none;
+    font-size: 0.78rem; color: var(--ink-secondary); cursor: pointer; user-select: none;
     margin-bottom: 0.8rem; line-height: 1.4;
   }
-  .check input { accent-color: var(--seismic); width: 14px; height: 14px; margin-top: 1px; }
+  .check input { accent-color: var(--primary); width: 14px; height: 14px; margin-top: 1px; }
   select {
-    width: 100%; background: var(--inset); color: var(--ink);
-    border: 1px solid var(--rule); border-radius: 6px; padding: 0.45rem 0.55rem;
-    font-family: var(--mono); font-size: 0.78rem;
+    width: 100%; background: #fff; color: var(--ink);
+    border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0.45rem 0.55rem;
+    font-family: var(--font-mono); font-size: 0.78rem;
   }
+  select:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
-  .note { margin-top: 0.7rem; font-size: 0.72rem; line-height: 1.55; color: var(--ink-3); }
-  .note code { color: var(--seismic); }
-  .seg {
-    margin-top: 0.7rem; padding: 0.55rem 0.7rem; border-radius: 6px;
-    background: var(--seismic-soft); border: 1px solid rgba(180, 50, 42, 0.3);
-    font-size: 0.72rem; color: var(--seismic); line-height: 1.45; display: none;
+  .note { margin-top: 0.7rem; font-size: 0.72rem; line-height: 1.55; color: var(--ink-muted); }
+  .note code { color: var(--primary); }
+  .segwarn {
+    margin-top: 0.7rem; padding: 0.55rem 0.7rem; border-radius: var(--radius);
+    background: var(--primary-wash); border-left: 4px solid var(--primary);
+    font-size: 0.72rem; color: var(--ink-secondary); line-height: 1.45; display: none;
   }
-  .seg.show { display: block; }
+  .segwarn.show { display: block; }
 
   /* presets */
   .presets { display: flex; gap: 0.45rem; flex-wrap: wrap; }
   .preset {
-    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.01em;
-    padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--rule);
-    background: var(--inset); color: var(--ink-2); cursor: pointer; transition: 0.14s;
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.01em;
+    padding: 0.45rem 0.65rem; border-radius: var(--radius); border: 1px solid var(--border-strong);
+    background: #fff; color: var(--ink-secondary); cursor: pointer; transition: 0.14s;
   }
-  .preset:hover { color: var(--ink); border-color: var(--seismic); background: #fff; }
-  .preset:focus-visible { outline: 2px solid var(--seismic-soft); outline-offset: 1px; }
+  .preset:hover { color: var(--ink); background: var(--panel); }
+  .preset:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
   /* charts */
   .charts { display: flex; flex-direction: column; gap: 1rem; }
@@ -248,21 +238,24 @@
   /* readout */
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .tile {
-    background: var(--card); border: 1px solid var(--rule);
-    border-left: 2px solid var(--seismic); border-radius: 8px; padding: 0.8rem 0.9rem;
+    background: #fff; border: 1px solid var(--border);
+    border-top: 3px solid var(--primary); border-radius: var(--radius); padding: 0.8rem 0.9rem;
   }
-  .tile .k { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
-  .tile .v { font-size: 1.15rem; font-weight: 600; margin-top: 0.25rem; color: var(--ink); }
+  .tile .k { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); }
+  .tile .v { font-family: var(--font-body); font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; color: var(--ink); }
 
-  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.8rem; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.8rem; }
   th {
-    text-align: right; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--ink-3); font-weight: 500; padding: 0 0 0.55rem; border-bottom: 1px solid var(--rule);
+    text-align: right; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-secondary); font-weight: 500; padding: 8px 12px;
+    background: var(--panel); border-bottom: 2px solid var(--navy); white-space: nowrap;
   }
   th:first-child { text-align: left; }
-  td { text-align: right; padding: 0.55rem 0; border-bottom: 1px solid var(--rule-2); color: var(--ink); }
-  td:first-child { text-align: left; color: var(--ink-2); }
-  tr:last-child td { border-bottom: none; }
-  .mdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.5rem; vertical-align: middle; }
-  tr.off { opacity: 0.32; }
+  /* :global — tbody rows are injected at runtime, so scoped selectors miss them */
+  .readout-card :global(td) { text-align: right; padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--ink); }
+  .readout-card :global(td:first-child) { text-align: left; color: var(--ink-secondary); }
+  .readout-card :global(tr:last-child td) { border-bottom: none; }
+  .readout-card :global(tbody tr:hover) { background: var(--primary-wash); }
+  .readout-card :global(.mdot) { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.5rem; vertical-align: middle; }
+  .readout-card :global(tr.off) { opacity: 0.32; }
 </style>
