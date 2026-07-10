@@ -60,9 +60,10 @@ tests/          engine.test.ts (golden-fixture parity)
 
 ## Hosting
 
-Configured for a GitHub **project page** at
-`https://<user>.github.io/fault-hazard-explorer/` (`base` in `astro.config.mjs`).
-To move to a subdomain, set `base: '/'` and update `site`.
+Live at **<https://james-lagreca.github.io/fault-hazard-explorer/>** — a GitHub
+project page deployed by `.github/workflows/deploy.yml` on every push to `main`
+(`base` in `astro.config.mjs`). To move to a subdomain, set `base: '/'` and
+update `site`.
 
 ## Status
 

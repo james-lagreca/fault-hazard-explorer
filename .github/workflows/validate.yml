@@ -29,6 +29,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r validation/requirements.txt
+      # The fixture generator silently falls back to a provisional non-OQ mode
+      # if hazardlib won't import — fail loudly here instead.
+      - name: Assert hazardlib oracle is importable
+        run: python -c "from openquake.hazardlib.mfd import EvenlyDiscretizedMFD; import importlib.metadata as md; print('oracle ok:', md.version('openquake.engine'))"
       - name: Regenerate golden fixtures from hazardlib
         run: python validation/generate_fixtures.py
       - name: Fail if committed fixtures drift from hazardlib
