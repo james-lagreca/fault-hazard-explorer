@@ -1,0 +1,350 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fault MFD → Hazard Explorer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1218; --panel:#151c26; --panel2:#1a2330; --inset:#0b0f15;
+    --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.13);
+    --tx:#e8eef4; --tx2:#8b98a9; --tx3:#5d6a7b;
+    --amber:#ffb23e; --amber-dim:rgba(255,178,62,.14);
+    --gr:#8b95a5; --tgr:#4a9eff; --char:#ff8a4c; --mmax:#3ad29f;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased}
+  body{padding:0 0 40px}
+  .topbar{border-top:2px solid var(--amber);background:linear-gradient(180deg,#121823,#0e1218);
+    padding:18px 24px 16px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line)}
+  .topbar h1{font-size:15px;font-weight:650;margin:0;letter-spacing:.14em;text-transform:uppercase}
+  .topbar .sub{font-family:var(--mono);font-size:11px;color:var(--tx2);letter-spacing:.04em}
+  .topbar .engine{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--tx3);
+    letter-spacing:.05em;text-align:right;line-height:1.5}
+  .topbar .engine b{color:var(--amber);font-weight:600}
+  .app{display:grid;grid-template-columns:340px 1fr;gap:20px;max-width:1280px;margin:20px auto 0;
+    padding:0 24px}
+  @media(max-width:880px){.app{grid-template-columns:1fr;padding:0 14px}}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+  .panel + .panel{margin-top:16px}
+  .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--tx3);margin:0 0 14px}
+
+  .ctl{margin-bottom:16px}
+  .ctl:last-child{margin-bottom:0}
+  .ctl label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:12px;color:var(--tx2);margin-bottom:7px}
+  .ctl .val{font-family:var(--mono);font-size:12.5px;color:var(--tx);font-weight:600}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;
+    background:var(--line2);outline:none;margin:0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--amber);cursor:pointer;border:2px solid var(--bg);box-shadow:0 0 0 1px var(--amber)}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--amber);
+    cursor:pointer;border:2px solid var(--bg)}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--amber-dim)}
+  input[type=range]:disabled{opacity:.35}
+  input[type=range]:disabled::-webkit-slider-thumb{background:var(--tx3);box-shadow:none}
+
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:11px;letter-spacing:.02em;padding:6px 10px;border-radius:6px;
+    border:1px solid var(--line2);background:var(--inset);color:var(--tx2);cursor:pointer;
+    display:flex;align-items:center;gap:6px;transition:.12s}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.35}
+  .chip.on{color:var(--tx);border-color:var(--line2);background:var(--panel2)}
+  .chip.on .dot{opacity:1}
+  .chip[data-m=GR].on{color:var(--gr)} .chip[data-m=TGR].on{color:var(--tgr)}
+  .chip[data-m=CHAR].on{color:var(--char)} .chip[data-m=MMAX].on{color:var(--mmax)}
+  .chip:focus-visible{outline:2px solid var(--amber-dim);outline-offset:1px}
+
+  .row{display:flex;gap:8px;align-items:center}
+  .check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx2);cursor:pointer;
+    user-select:none;margin-bottom:7px}
+  .check input{accent-color:var(--amber);width:14px;height:14px}
+  select{width:100%;background:var(--inset);color:var(--tx);border:1px solid var(--line2);
+    border-radius:6px;padding:7px 9px;font-family:var(--mono);font-size:12px}
+  .presets{display:flex;gap:7px;flex-wrap:wrap}
+  .btn{font-size:11px;font-family:var(--mono);letter-spacing:.02em;padding:7px 11px;border-radius:6px;
+    border:1px solid var(--line2);background:var(--inset);color:var(--tx2);cursor:pointer;transition:.12s}
+  .btn:hover{color:var(--tx);border-color:var(--amber);background:var(--panel2)}
+  .btn:focus-visible{outline:2px solid var(--amber-dim);outline-offset:1px}
+
+  .note{margin-top:10px;font-size:11px;line-height:1.5;color:var(--tx2);font-family:var(--mono)}
+  .seg{margin-top:10px;padding:8px 10px;border-radius:6px;background:var(--amber-dim);
+    border:1px solid rgba(255,178,62,.3);font-family:var(--mono);font-size:11px;color:var(--amber);
+    line-height:1.45;display:none}
+  .seg.show{display:block}
+
+  .charts .panel{padding:12px 10px 4px}
+  .plot{width:100%;height:300px}
+  @media(max-width:880px){.plot{height:260px}}
+
+  .readout{margin-top:16px}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .tile{background:var(--inset);border:1px solid var(--line);border-left:2px solid var(--amber);
+    border-radius:7px;padding:11px 13px}
+  .tile .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--tx3)}
+  .tile .v{font-family:var(--mono);font-size:18px;font-weight:650;margin-top:3px;color:var(--tx)}
+  .tile .u{font-size:11px;color:var(--tx2);font-weight:400}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+  th{text-align:right;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);
+    font-weight:500;padding:0 0 8px;border-bottom:1px solid var(--line)}
+  th:first-child{text-align:left}
+  td{text-align:right;padding:8px 0;border-bottom:1px solid var(--line);color:var(--tx)}
+  td:first-child{text-align:left;color:var(--tx2)}
+  .mdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  tr.off{opacity:.28}
+</style>
+
+<div class="topbar">
+  <h1>Fault MFD → Hazard</h1>
+  <span class="sub">magnitude-frequency choice · single fault · live recompute</span>
+  <span class="engine">engine: <b>JS preview</b> (mirrors hazardlib)<br>production: OpenQuake <b>hazardlib</b></span>
+</div>
+
+<div class="app">
+  <!-- CONTROLS -->
+  <div>
+    <div class="panel">
+      <p class="eyebrow">Models shown</p>
+      <div class="chips" id="chips">
+        <button class="chip on" data-m="GR"><span class="dot"></span>GR (no cap)</button>
+        <button class="chip on" data-m="TGR"><span class="dot"></span>Truncated GR</button>
+        <button class="chip on" data-m="CHAR"><span class="dot"></span>Characteristic</button>
+        <button class="chip on" data-m="MMAX"><span class="dot"></span>M<sub>max</sub></button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <p class="eyebrow">Fault &amp; rate</p>
+      <div class="ctl"><label>b-value<span class="val" id="vb">1.00</span></label>
+        <input type="range" id="b" min="0.70" max="1.30" step="0.01" value="1.00"></div>
+      <div class="ctl"><label>Slip rate<span class="val" id="vslip">5.0 <span class="u">mm/yr</span></span></label>
+        <input type="range" id="slip" min="0" max="1000" step="1" value="582"></div>
+      <div class="ctl"><label>Fault length<span class="val" id="vlen">40 <span class="u">km</span></span></label>
+        <input type="range" id="len" min="5" max="200" step="1" value="40"></div>
+      <div class="ctl"><label>Down-dip width<span class="val" id="vwid">15 <span class="u">km</span></span></label>
+        <input type="range" id="wid" min="5" max="25" step="1" value="15"></div>
+      <div class="ctl"><label>M<sub>min</sub><span class="val" id="vmmin">5.0</span></label>
+        <input type="range" id="mmin" min="4.5" max="6.0" step="0.1" value="5.0"></div>
+    </div>
+
+    <div class="panel">
+      <p class="eyebrow">Maximum magnitude</p>
+      <label class="check"><input type="checkbox" id="lockmax" checked>
+        Lock to area scaling (Wells &amp; Coppersmith 1994)</label>
+      <div class="ctl"><label>M<sub>max</sub> (characteristic)<span class="val" id="vmmax">—</span></label>
+        <input type="range" id="mmax" min="5.5" max="8.0" step="0.01" value="6.79" disabled></div>
+      <div class="note" id="scalenote"></div>
+      <div class="seg" id="segnote"></div>
+    </div>
+
+    <div class="panel">
+      <p class="eyebrow">Site &amp; ground motion</p>
+      <div class="ctl"><label>Rupture distance<span class="val" id="vr">10 <span class="u">km</span></span></label>
+        <input type="range" id="r" min="2" max="60" step="1" value="10"></div>
+      <div class="ctl"><label>Ground-motion model</label>
+        <select id="gmpe">
+          <option value="gen">Generic active-crust (toy)</option>
+          <option value="scr">SCR hard-rock (toy)</option>
+        </select></div>
+      <div class="note">Toy GMMs for the preview. The hazardlib backend swaps in real
+        <code>gsim</code> models (Somerville 2009, Allen 2012, NGA-East…).</div>
+    </div>
+
+    <div class="panel">
+      <p class="eyebrow">Presets</p>
+      <div class="presets">
+        <button class="btn" data-p="se">SE Australia (SCR)</button>
+        <button class="btn" data-p="nz">NZ Alpine</button>
+        <button class="btn" data-p="reset">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHARTS + READOUT -->
+  <div class="charts">
+    <div class="panel"><div id="mfd" class="plot"></div></div>
+    <div class="panel" style="margin-top:16px"><div id="haz" class="plot"></div></div>
+
+    <div class="readout">
+      <div class="tiles">
+        <div class="tile"><div class="k">Moment rate</div>
+          <div class="v" id="t_mo">—</div></div>
+        <div class="tile"><div class="k">Area · M<sub>max</sub>(scaling)</div>
+          <div class="v" id="t_area">—</div></div>
+      </div>
+      <div class="panel" style="padding:14px 16px">
+        <p class="eyebrow" style="margin-bottom:10px">Per-model readout</p>
+        <table>
+          <thead><tr><th>Model</th><th>Recur. M<sub>max</sub></th>
+            <th>PGA · 475 yr</th><th>PGA · 2475 yr</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MU=3e10, DM=0.01;
+const COL={GR:'#8b95a5',TGR:'#4a9eff',CHAR:'#ff8a4c',MMAX:'#3ad29f'};
+const NAME={GR:'GR (no cap)',TGR:'Truncated GR',CHAR:'Characteristic',MMAX:'M\u2098\u2090\u2093'};
+const GMPE={gen:{c0:-3.5,c1:0.9,c2:1.2,h:5,sig:0.6},
+            scr:{c0:-2.9,c1:0.82,c2:1.45,h:7,sig:0.55}};
+const M0=m=>Math.pow(10,1.5*m+9.05);
+function ncdf(z){const t=1/(1+0.2316419*Math.abs(z));const d=0.3989423*Math.exp(-z*z/2);
+  let p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));return z>0?1-p:p;}
+const wc94=Akm2=>4.07+0.98*Math.log10(Akm2);
+
+// slip slider (0..1000) -> log scale 0.01..30 mm/yr
+const slipFromSlider=s=>0.01*Math.pow(3000,s/1000);
+const sliderFromSlip=v=>1000*Math.log(v/0.01)/Math.log(3000);
+
+const el=id=>document.getElementById(id);
+const shown={GR:true,TGR:true,CHAR:true,MMAX:true};
+
+function params(){
+  const b=+el('b').value, slip=slipFromSlider(+el('slip').value);
+  const L=+el('len').value, W=+el('wid').value, Mmin=+el('mmin').value, R=+el('r').value;
+  const Akm2=L*W, scaleMag=wc94(Akm2);
+  const locked=el('lockmax').checked;
+  let Mmax = locked ? scaleMag : +el('mmax').value;
+  return {b,slip,L,W,Mmin,R,Akm2,scaleMag,Mmax,locked,gmpe:GMPE[el('gmpe').value]};
+}
+
+function compute(p){
+  const gridMax=Math.max(7.5,p.Mmax+0.5);
+  const m=[]; for(let x=p.Mmin;x<=gridMax+1e-9;x+=DM) m.push(+x.toFixed(2));
+  const A=p.L*1e3*p.W*1e3, M0rate=MU*A*p.slip*1e-3;
+  const expo=mi=>Math.pow(10,-p.b*mi);
+  const balance=g=>{let s=0;for(let i=0;i<m.length;i++)s+=Math.max(0,g[i])*M0(m[i])*DM;
+    const k=M0rate/s;return m.map((mi,i)=>k*Math.max(0,g[i]));};
+  const g={
+    GR:  m.map(mi=>mi<=7.5?expo(mi):0),
+    TGR: m.map(mi=>mi<=p.Mmax?expo(mi):0),
+    CHAR:m.map(mi=>mi<p.Mmax-0.5?expo(mi):(mi<=p.Mmax?Math.pow(10,-p.b*(p.Mmax-1.0)):0)),
+    MMAX:m.map(mi=>(mi>=p.Mmax-0.1&&mi<=p.Mmax)?1:0)
+  };
+  const rate={}; for(const k in g) rate[k]=balance(g[k]);
+  const cum=r=>{const c=new Array(r.length);let a=0;for(let i=r.length-1;i>=0;i--){a+=r[i]*DM;c[i]=a;}return c;};
+  const cumv={}; for(const k in rate) cumv[k]=cum(rate[k]);
+  const pga=[]; for(let i=0;i<=120;i++) pga.push(0.01*Math.pow(150,i/120));
+  const haz=r=>pga.map(x=>{let lam=0;const lnx=Math.log(x);
+    for(let i=0;i<m.length;i++){if(r[i]<=0)continue;
+      const lnmed=p.gmpe.c0+p.gmpe.c1*m[i]-p.gmpe.c2*Math.log(p.R+p.gmpe.h);
+      lam+=r[i]*DM*(1-ncdf((lnx-lnmed)/p.gmpe.sig));}return lam;});
+  const hz={}; for(const k in rate) hz[k]=haz(rate[k]);
+  return {m,cumv,pga,hz,M0rate,p};
+}
+function pgaAt(pga,lam,t){for(let i=0;i<lam.length-1;i++){
+  if((lam[i]-t)*(lam[i+1]-t)<=0&&lam[i]!==lam[i+1]){
+    const lx0=Math.log(pga[i]),lx1=Math.log(pga[i+1]),ly0=Math.log(lam[i]),ly1=Math.log(lam[i+1]);
+    return Math.exp(lx0+(Math.log(t)-ly0)*(lx1-lx0)/(ly1-ly0));}}return null;}
+const recur=(m,c,mt)=>{let bi=0,bd=9;for(let i=0;i<m.length;i++){const d=Math.abs(m[i]-mt);if(d<bd){bd=d;bi=i;}}
+  return c[bi]>0?1/c[bi]:null;};
+
+const baseLayout=extra=>Object.assign({
+  paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
+  font:{color:'#8b98a9',family:'ui-monospace,Menlo,monospace',size:11},
+  margin:{l:58,r:14,t:30,b:42},showlegend:false,
+  xaxis:{gridcolor:'rgba(255,255,255,.06)',zeroline:false,linecolor:'rgba(255,255,255,.13)'},
+  yaxis:{gridcolor:'rgba(255,255,255,.06)',zeroline:false,linecolor:'rgba(255,255,255,.13)'}
+},extra);
+const CFG={displayModeBar:false,responsive:true};
+
+function render(){
+  const p=params(); const d=compute(p);
+  // ---- MFD ----
+  const mt=[];
+  for(const k of ['GR','TGR','CHAR','MMAX']) if(shown[k])
+    mt.push({x:d.m,y:d.cumv[k],type:'scatter',mode:'lines',name:NAME[k],
+      line:{color:COL[k],width:2.2,dash:k==='GR'?'dash':'solid'},hovertemplate:'M %{x}<br>%{y:.2e}/yr<extra></extra>'});
+  const shapes=[{type:'line',x0:p.Mmax,x1:p.Mmax,yref:'paper',y0:0,y1:1,
+      line:{color:'rgba(255,255,255,.4)',width:1,dash:'dot'}}];
+  const anns=[{x:p.Mmax,yref:'paper',y:1,text:'M<sub>max</sub> '+p.Mmax.toFixed(2),showarrow:false,
+      font:{color:'#cfd8e2',size:10},xanchor:'left',yanchor:'top',xshift:4}];
+  if(!p.locked && Math.abs(p.scaleMag-p.Mmax)>0.03){
+    shapes.push({type:'line',x0:p.scaleMag,x1:p.scaleMag,yref:'paper',y0:0,y1:1,
+      line:{color:'#ffb23e',width:1,dash:'dot'}});
+    anns.push({x:p.scaleMag,yref:'paper',y:0.12,text:'scaling '+p.scaleMag.toFixed(2),showarrow:false,
+      font:{color:'#ffb23e',size:10},xanchor:'left',xshift:4});}
+  Plotly.react('mfd',mt,baseLayout({
+    title:{text:'(a)  Cumulative recurrence',x:0,font:{color:'#e8eef4',size:12.5}},
+    xaxis:Object.assign(baseLayout().xaxis,{title:'Magnitude',range:[p.Mmin,Math.max(7.5,p.Mmax+0.5)]}),
+    yaxis:Object.assign(baseLayout().yaxis,{title:'N(\u2265M) /yr',type:'log',range:[-5,-0.7]}),
+    shapes,annotations:anns}),CFG);
+  // ---- HAZARD ----
+  const ht=[];
+  for(const k of ['GR','TGR','CHAR','MMAX']) if(shown[k])
+    ht.push({x:d.pga,y:d.hz[k],type:'scatter',mode:'lines',name:NAME[k],
+      line:{color:COL[k],width:2.2,dash:k==='GR'?'dash':'solid'},
+      hovertemplate:'%{x:.3f} g<br>%{y:.2e}/yr<extra></extra>'});
+  const hsh=[],han=[];
+  [[1/475,'475 yr'],[1/2475,'2475 yr']].forEach(([rp,t])=>{
+    hsh.push({type:'line',xref:'paper',x0:0,x1:1,y0:rp,y1:rp,
+      line:{color:'rgba(255,178,62,.5)',width:1,dash:'dot'}});
+    han.push({xref:'paper',x:0,y:Math.log10(rp),text:t,showarrow:false,
+      font:{color:'#ffb23e',size:9.5},xanchor:'left',yanchor:'bottom',xshift:2});});
+  Plotly.react('haz',ht,baseLayout({
+    title:{text:'(b)  Hazard at site',x:0,font:{color:'#e8eef4',size:12.5}},
+    xaxis:Object.assign(baseLayout().xaxis,{title:'PGA (g)',type:'log',range:[-2,Math.log10(1.5)]}),
+    yaxis:Object.assign(baseLayout().yaxis,{title:'Annual rate of exceedance',type:'log',range:[-5,-1]}),
+    shapes:hsh,annotations:han}),CFG);
+  // ---- readout ----
+  const mexp=Math.floor(Math.log10(d.M0rate));
+  el('t_mo').innerHTML=(d.M0rate/Math.pow(10,mexp)).toFixed(2)+'\u00d710<sup>'+mexp+'</sup> <span class="u">N\u00b7m/yr</span>';
+  el('t_area').innerHTML=p.Akm2.toFixed(0)+' km\u00b2 <span class="u">\u00b7 M</span>'+p.scaleMag.toFixed(2);
+  const mt2=p.Mmax-0.2;
+  const fmtY=y=>y==null?'\u2014':y>=1e4?(y/1e3).toFixed(1)+'k yr':Math.round(y).toLocaleString()+' yr';
+  const fmtG=g=>g==null?'\u2014':g.toFixed(3)+' g';
+  let rows='';
+  for(const k of ['GR','TGR','CHAR','MMAX']){
+    rows+=`<tr class="${shown[k]?'':'off'}"><td><span class="mdot" style="background:${COL[k]}"></span>${NAME[k]}</td>`+
+      `<td>${fmtY(recur(d.m,d.cumv[k],mt2))}</td>`+
+      `<td>${fmtG(pgaAt(d.pga,d.hz[k],1/475))}</td>`+
+      `<td>${fmtG(pgaAt(d.pga,d.hz[k],1/2475))}</td></tr>`;
+  }
+  el('tbody').innerHTML=rows;
+  // mmax controls
+  el('vmmax').textContent=p.Mmax.toFixed(2)+(p.locked?'  (scaling)':'');
+  el('mmax').disabled=p.locked; if(p.locked) el('mmax').value=p.scaleMag;
+  el('scalenote').innerHTML='Area scaling \u2192 M'+p.scaleMag.toFixed(2)+
+    (p.Akm2>=p.W*p.W*1.0 && p.L>p.W*4?'  · width-saturated regime':'');
+  const seg=el('segnote');
+  if(!p.locked && p.Mmax < p.scaleMag-0.05){
+    seg.classList.add('show');
+    seg.innerHTML='Segmented: M<sub>max</sub> capped '+(p.scaleMag-p.Mmax).toFixed(2)+
+      ' below full-rupture. Same moment \u2192 same-size events more often, not bigger ones.';
+  } else seg.classList.remove('show');
+}
+
+// ---- wiring ----
+['b','slip','len','wid','mmin','mmax','r','gmpe','lockmax'].forEach(id=>{
+  el(id).addEventListener('input',()=>{syncLabels();render();});});
+function syncLabels(){
+  el('vb').textContent=(+el('b').value).toFixed(2);
+  el('vslip').innerHTML=slipFromSlider(+el('slip').value).toFixed(2)+' <span class="u">mm/yr</span>';
+  el('vlen').innerHTML=el('len').value+' <span class="u">km</span>';
+  el('vwid').innerHTML=el('wid').value+' <span class="u">km</span>';
+  el('vmmin').textContent=(+el('mmin').value).toFixed(1);
+  el('vr').innerHTML=el('r').value+' <span class="u">km</span>';
+}
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  const m=c.dataset.m; shown[m]=!shown[m]; c.classList.toggle('on',shown[m]); render();}));
+document.querySelectorAll('.btn').forEach(btn=>btn.addEventListener('click',()=>{
+  const p=btn.dataset.p;
+  const set=(id,v)=>{el(id).value=v;};
+  if(p==='reset'){set('b',1.0);set('slip',sliderFromSlip(5));set('len',40);set('wid',15);
+    set('mmin',5.0);set('r',10);el('gmpe').value='gen';el('lockmax').checked=true;}
+  if(p==='se'){set('b',0.9);set('slip',sliderFromSlip(0.04));set('len',30);set('wid',15);
+    set('mmin',5.0);set('r',12);el('gmpe').value='scr';el('lockmax').checked=true;}
+  if(p==='nz'){set('b',1.05);set('slip',sliderFromSlip(25));set('len',120);set('wid',18);
+    set('mmin',5.5);set('r',8);el('gmpe').value='gen';el('lockmax').checked=true;}
+  syncLabels();render();}));
+
+syncLabels(); render();
+window.addEventListener('resize',()=>{Plotly.Plots.resize('mfd');Plotly.Plots.resize('haz');});
+</script>

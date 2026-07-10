@@ -1,0 +1,11 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "verbatimModuleSyntax": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src", "tests", "*.mjs", "*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

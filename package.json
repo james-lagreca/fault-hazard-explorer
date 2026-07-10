@@ -1,0 +1,25 @@
+{
+  "name": "fault-hazard-explorer",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Interactive explainer: how the choice of magnitude-frequency distribution changes seismic hazard from a single fault, for a fixed slip rate.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "astro check && tsc --noEmit",
+    "fixtures": "python validation/generate_fixtures.py"
+  },
+  "dependencies": {
+    "astro": "^5.7.0",
+    "plotly.js-dist-min": "^2.35.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/node": "^22.20.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

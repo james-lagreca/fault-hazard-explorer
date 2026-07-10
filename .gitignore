@@ -1,0 +1,25 @@
+# build output
+dist/
+.astro/
+
+# deps
+node_modules/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# local tooling config (machine-specific paths)
+.claude/
+
+# editor / os
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# logs
+npm-debug.log*
+*.log
