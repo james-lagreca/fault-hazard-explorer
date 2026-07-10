@@ -35,8 +35,11 @@ jobs:
         run: python -c "from openquake.hazardlib.mfd import EvenlyDiscretizedMFD; import importlib.metadata as md; print('oracle ok:', md.version('openquake.engine'))"
       - name: Regenerate golden fixtures from hazardlib
         run: python validation/generate_fixtures.py
+      # Numeric comparison at 1e-9 (the suite's tolerance), not `git diff`:
+      # runner CPUs differ by 1 ulp in numpy transcendentals, which is
+      # byte-visible but physically meaningless.
       - name: Fail if committed fixtures drift from hazardlib
-        run: git diff --exit-code validation/fixtures || (echo "::error::Committed fixtures differ from freshly generated OpenQuake fixtures. Run 'npm run fixtures' and commit." && exit 1)
+        run: python validation/check_drift.py
 
       # --- TypeScript engine asserted equal ---
       - uses: actions/setup-node@v4
