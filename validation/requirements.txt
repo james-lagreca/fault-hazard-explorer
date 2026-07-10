@@ -1,0 +1,4 @@
+# The validation oracle. Pinned to the version the committed fixtures were
+# generated with (each fixture's `oracle` field records it) so the CI drift
+# check is byte-stable. Bump together with regenerated fixtures.
+openquake.engine==3.16.1

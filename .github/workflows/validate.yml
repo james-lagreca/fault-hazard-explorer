@@ -24,10 +24,11 @@ jobs:
         with:
           python-version: '3.10'
           cache: pip
+          cache-dependency-path: validation/requirements.txt
       - name: Install OpenQuake 3.16.1 (heavy — cached)
         run: |
           python -m pip install --upgrade pip
-          pip install "openquake.engine==3.16.1"
+          pip install -r validation/requirements.txt
       - name: Regenerate golden fixtures from hazardlib
         run: python validation/generate_fixtures.py
       - name: Fail if committed fixtures drift from hazardlib
