@@ -72,6 +72,9 @@ update `site`.
 - [x] Phase 2 — tool-first UI with live exploration
 - [x] Phase 2.5 — `CHAR` reimplements OpenQuake's `YoungsCoppersmith1985MFD` exactly
 - [x] Phase 3a — real `gsim` in TS: `Allen2012_SS14` (PGA) matched to OpenQuake, + Vs30 control
+- [x] Phase 3c — dip-aware geometry (derived width, cross-section R<sub>rup</sub>, hanging wall vs
+      footwall), scaling-relation choice (WC94 / Leonard14 SCR / Thingbaijam17 reverse),
+      per-magnitude deaggregation panel, data-driven plot ranges
 - [ ] Phase 3b — full hazard-*curve* parity vs `calc_hazard_curves`; more IMTs (SA) / gsims
 
 See [SPEC.md](SPEC.md) for the full build spec.

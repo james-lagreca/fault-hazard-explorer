@@ -23,18 +23,34 @@
           <input type="range" id="b" min="0.70" max="1.30" step="0.01" value="1.00"></div>
         <div class="ctl"><label for="slip">Slip rate<span class="val" id="vslip">0.30 <span class="u">mm/yr</span></span></label>
           <input type="range" id="slip" min="0" max="1000" step="1" value="425"></div>
-        <div class="ctl"><label for="len">Fault length<span class="val" id="vlen">40 <span class="u">km</span></span></label>
-          <input type="range" id="len" min="5" max="200" step="1" value="40"></div>
-        <div class="ctl"><label for="wid">Down-dip width<span class="val" id="vwid">15 <span class="u">km</span></span></label>
-          <input type="range" id="wid" min="5" max="25" step="1" value="15"></div>
         <div class="ctl"><label for="mmin"><span>M<sub>min</sub></span><span class="val" id="vmmin">5.0</span></label>
           <input type="range" id="mmin" min="4.5" max="6.0" step="0.1" value="5.0"></div>
       </div>
 
       <div class="card">
+        <p class="eyebrow">Geometry</p>
+        <div class="ctl"><label for="len">Fault length<span class="val" id="vlen">40 <span class="u">km</span></span></label>
+          <input type="range" id="len" min="5" max="200" step="1" value="40"></div>
+        <div class="ctl"><label for="dip">Dip<span class="val" id="vdip">45°</span></label>
+          <input type="range" id="dip" min="10" max="90" step="1" value="45"></div>
+        <div class="ctl"><label for="thick">Seismogenic thickness<span class="val" id="vthick">15 <span class="u">km</span></span></label>
+          <input type="range" id="thick" min="5" max="25" step="1" value="15"></div>
+        <div class="ctl"><label for="ztor">Top of rupture<span class="val" id="vztor">0.0 <span class="u">km</span></span></label>
+          <input type="range" id="ztor" min="0" max="8" step="0.5" value="0"></div>
+        <p class="note">Down-dip width is derived: W&nbsp;=&nbsp;thickness&nbsp;/&nbsp;sin&nbsp;dip
+          (capped at 50&nbsp;km). Shallower dip → wider plane → larger area.</p>
+      </div>
+
+      <div class="card">
         <p class="eyebrow">Maximum magnitude</p>
+        <div class="ctl"><label for="scalerel">Area→M scaling relation</label>
+          <select id="scalerel">
+            <option value="wc94" selected>Wells &amp; Coppersmith 1994</option>
+            <option value="leonard14">Leonard 2014 — SCR</option>
+            <option value="tmg17">Thingbaijam et al. 2017 — reverse</option>
+          </select></div>
         <label class="check"><input type="checkbox" id="lockmax" checked>
-          Lock to area scaling <span class="u">(Wells &amp; Coppersmith 1994)</span></label>
+          Lock M<sub>max</sub> to the area scaling above</label>
         <div class="ctl"><label for="mmax"><span>M<sub>max</sub></span><span class="val" id="vmmax">—</span></label>
           <input type="range" id="mmax" min="5.5" max="8.0" step="0.01" value="6.79" disabled></div>
         <div class="note" id="scalenote"></div>
@@ -43,8 +59,10 @@
 
       <div class="card">
         <p class="eyebrow">Site &amp; ground motion</p>
-        <div class="ctl"><label for="r">Site distance<span class="val" id="vr">10 <span class="u">km</span></span></label>
-          <input type="range" id="r" min="2" max="60" step="1" value="10"></div>
+        <div class="ctl"><label for="r">Site position vs trace<span class="val" id="vr">+10 <span class="u">km</span></span></label>
+          <input type="range" id="r" min="-60" max="60" step="1" value="10"></div>
+        <p class="note">Positive = hanging-wall side (the dip direction).
+          R<sub>rup</sub> is the closest distance to the dipping plane.</p>
         <div class="ctl"><label for="vs30"><span>V<sub>S30</sub></span><span class="val" id="vvs30">760 <span class="u">m/s</span></span></label>
           <input type="range" id="vs30" min="150" max="1100" step="10" value="760"></div>
         <div class="ctl"><label for="gmpe">Ground-motion model</label>
@@ -75,9 +93,18 @@
         <div class="card plot-card"><div id="haz" class="plot"></div></div>
       </div>
 
+      <div class="card plot-card deagg-card">
+        <div class="rp-row" id="rprow" role="group" aria-label="Deaggregation return period">
+          <button class="rpbtn on" data-rp="475" aria-pressed="true">475 yr</button>
+          <button class="rpbtn" data-rp="2475" aria-pressed="false">2475 yr</button>
+        </div>
+        <div id="deagg" class="plot plot-short"></div>
+      </div>
+
       <div class="tiles">
         <div class="tile"><div class="k">Moment rate</div><div class="v" id="t_mo">—</div></div>
         <div class="tile"><div class="k">Area · M<sub>max</sub>(scaling)</div><div class="v" id="t_area">—</div></div>
+        <div class="tile"><div class="k">R<sub>rup</sub> · site side</div><div class="v" id="t_rrup">—</div></div>
       </div>
 
       <div class="card readout-card">
@@ -233,10 +260,25 @@
   }
   .plot-card { padding: 0.6rem 0.5rem 0.2rem; }
   .plot { width: 100%; height: 360px; }
-  @media (max-width: 860px) { .plot { height: 280px; } }
+  .plot-short { height: 260px; }
+  @media (max-width: 860px) { .plot { height: 280px; } .plot-short { height: 240px; } }
+
+  /* deagg return-period toggle */
+  .deagg-card { position: relative; }
+  .rp-row { position: absolute; top: 0.65rem; right: 0.75rem; z-index: 2; display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: #fff; }
+  .rpbtn {
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.01em;
+    padding: 0.3rem 0.55rem; border: none; border-right: 1px solid var(--border);
+    background: transparent; color: var(--ink-secondary); cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .rpbtn:last-child { border-right: none; }
+  .rpbtn:hover:not(.on) { background: var(--panel); }
+  .rpbtn.on { background: var(--navy); color: #fff; }
+  .rpbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
   /* readout */
-  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; }
   .tile {
     background: #fff; border: 1px solid var(--border);
     border-top: 3px solid var(--primary); border-radius: var(--radius); padding: 0.8rem 0.9rem;

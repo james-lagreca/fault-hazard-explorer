@@ -51,6 +51,27 @@ export function hazardCurve(mfd: Mfd, pga: number[], gmm: GmmEval): number[] {
 }
 
 /**
+ * Magnitude deaggregation at a ground-motion level x* (g): each bin's share of
+ * the total exceedance rate,
+ *   fᵢ = rateᵢ · P(X > x* | mᵢ) / λ(>x*),
+ * normalized to sum to 1. Returns null when x* is null (curve never crosses
+ * the target rate) or nothing exceeds.
+ */
+export function deaggregate(mfd: Mfd, gmm: GmmEval, xstar: number | null): number[] | null {
+  if (xstar == null) return null;
+  const lnx = Math.log(xstar);
+  const contrib = mfd.mids.map((m, i) => {
+    const r = mfd.rates[i]!;
+    if (r <= 0) return 0;
+    const p = gmm(m);
+    return r * (1 - ncdf((lnx - p.lnMean) / p.sigma));
+  });
+  const total = contrib.reduce((s, c) => s + c, 0);
+  if (total <= 0) return null;
+  return contrib.map((c) => c / total);
+}
+
+/**
  * Invert a hazard curve in log-log space to read the PGA (g) at a target
  * annual rate `t` (e.g. 1/475). Returns null if the curve does not cross `t`.
  */

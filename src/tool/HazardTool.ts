@@ -2,10 +2,12 @@
 import { compute } from '../engine/index';
 import { MODEL_KEYS } from '../engine/types';
 import type { ModelKey } from '../engine/types';
-import { MODEL_META, renderMFD, renderHazard, resizePlots } from './plots';
-import { applyPreset, readParams, syncLabels } from './controls';
+import { MAX_WIDTH_KM } from '../engine/geometry';
+import { MODEL_META, renderMFD, renderHazard, renderDeagg, resizePlots } from './plots';
+import { applyPreset, readState, syncLabels } from './controls';
 
 const shown: Record<ModelKey, boolean> = { GR: true, TGR: true, CHAR: true, MMAX: true };
+let deaggRP: '475' | '2475' = '475';
 
 const $ = (id: string) => document.getElementById(id);
 const setHTML = (id: string, html: string) => {
@@ -20,13 +22,15 @@ const fmtG = (g: number | null): string => (g == null ? '—' : g.toFixed(3) + '
 function render(): void {
   const mfdEl = $('mfd');
   const hazEl = $('haz');
-  if (!mfdEl || !hazEl) return;
+  const deaggEl = $('deagg');
+  if (!mfdEl || !hazEl || !deaggEl) return;
 
-  const p = readParams();
+  const { params: p, geom } = readState();
   const r = compute(p);
 
   renderMFD(mfdEl, r, shown);
   renderHazard(hazEl, r, shown);
+  renderDeagg(deaggEl, r, shown, deaggRP);
 
   // Mmax control: disabled & mirrored when locked to scaling.
   const mmaxInput = $('mmax') as HTMLInputElement | null;
@@ -44,6 +48,7 @@ function render(): void {
   );
   const area = p.L * p.W;
   setHTML('t_area', area.toFixed(0) + ' km² <span class="u">· M</span>' + r.scalingMag.toFixed(2));
+  setHTML('t_rrup', geom.rrup.toFixed(1) + ' km <span class="u">· ' + geom.side + '</span>');
 
   // Per-model table.
   let rows = '';
@@ -59,10 +64,10 @@ function render(): void {
   setHTML('tbody', rows);
 
   // Scaling + segmentation notes.
-  const widthSaturated = area >= p.W * p.W && p.L > p.W * 4;
+  const widthCapped = geom.W >= MAX_WIDTH_KM;
   setHTML(
     'scalenote',
-    'Area scaling → M' + r.scalingMag.toFixed(2) + (widthSaturated ? ' · width-saturated regime' : ''),
+    'Area scaling → M' + r.scalingMag.toFixed(2) + (widthCapped ? ' · width capped at ' + MAX_WIDTH_KM + ' km' : ''),
   );
   const seg = $('segnote');
   if (seg) {
@@ -79,7 +84,7 @@ function render(): void {
 }
 
 export function initHazardTool(): void {
-  const inputs = ['b', 'slip', 'len', 'wid', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax'];
+  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel'];
   for (const id of inputs) {
     const el = $(id);
     if (el) el.addEventListener('input', () => { syncLabels(); render(); });
@@ -91,6 +96,18 @@ export function initHazardTool(): void {
       shown[m] = !shown[m];
       c.classList.toggle('on', shown[m]);
       c.setAttribute('aria-pressed', String(shown[m]));
+      render();
+    }),
+  );
+
+  document.querySelectorAll<HTMLButtonElement>('.rpbtn').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      deaggRP = (btn.dataset.rp === '2475' ? '2475' : '475');
+      document.querySelectorAll<HTMLButtonElement>('.rpbtn').forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
       render();
     }),
   );
@@ -109,7 +126,8 @@ export function initHazardTool(): void {
     raf = requestAnimationFrame(() => {
       const mfdEl = $('mfd');
       const hazEl = $('haz');
-      if (mfdEl && hazEl) resizePlots(mfdEl, hazEl);
+      const deaggEl = $('deagg');
+      if (mfdEl && hazEl && deaggEl) resizePlots(mfdEl, hazEl, deaggEl);
     });
   });
 

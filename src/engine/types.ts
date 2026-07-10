@@ -6,6 +6,9 @@ export const MODEL_KEYS: readonly ModelKey[] = ['GR', 'TGR', 'CHAR', 'MMAX'] as 
 
 export type GmpeKey = 'allen' | 'gen' | 'scr';
 
+/** Magnitude–area scaling relation used when `lockMax` is true. */
+export type ScalingKey = 'wc94' | 'leonard14' | 'tmg17';
+
 export interface Params {
   /** Gutenberg-Richter b-value (slope of the exponential). */
   b: number;
@@ -29,6 +32,8 @@ export interface Params {
   gmpe: GmpeKey;
   /** Magnitude bin width, dM. Default 0.1 to match the OpenQuake fixture grid. */
   binWidth?: number;
+  /** Area→magnitude scaling relation. Default 'wc94' (fixture-compatible). */
+  scaling?: ScalingKey;
 }
 
 /** Incremental-rate description of a single MFD (one model). */
@@ -63,4 +68,10 @@ export interface EngineResult {
   recurrenceByModel: Record<ModelKey, number | null>;
   /** PGA (g) at the 475-yr and 2475-yr return periods, per model. */
   pgaAtRP: Record<ModelKey, { rp475: number | null; rp2475: number | null }>;
+  /**
+   * Magnitude deaggregation: each model's normalized per-bin share of the
+   * exceedances of its own 475-yr / 2475-yr motion (aligned to mfd mids).
+   * Null when the hazard curve never reaches that return period.
+   */
+  deaggByModel: Record<ModelKey, { rp475: number[] | null; rp2475: number[] | null }>;
 }

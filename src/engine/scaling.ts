@@ -27,3 +27,16 @@ export function leonard2014SCR(area_km2: number, rake = 90): number {
   }
   return Math.log10(area_km2) + c;
 }
+
+/**
+ * Thingbaijam, Mai & Goda (2017, BSSA 107) rupture-area scaling for crustal
+ * reverse faults, inverted for area → magnitude:
+ *   log10(A_km²) = −4.362 + 1.049 · Mw   →   Mw = (log10 A + 4.362) / 1.049
+ * OpenQuake 3.16 ships only their interface/strike-slip relations, so this one
+ * is coded from the paper (Table 1) and unit-tested, not oracle-validated.
+ * Tracks WC94 closely (crossing near A ≈ 2000 km²) while Leonard 2014 SCR sits
+ * ~0.17 Mw above both — the selectable spread is the epistemic point.
+ */
+export function thingbaijam2017Reverse(area_km2: number): number {
+  return (Math.log10(area_km2) + 4.362) / 1.049;
+}

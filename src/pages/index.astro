@@ -84,7 +84,9 @@ const validated = oracle.startsWith('openquake');
           <div class="read-grid">
             <p><b>(a) Cumulative recurrence.</b> N(≥M) per year for each MFD. Concentrating moment near M<sub>max</sub> necessarily starves the moderate magnitudes — watch the characteristic and M<sub>max</sub> lines dip below truncated GR in the middle and rise at the top. The dotted line marks M<sub>max</sub>.</p>
             <p><b>(b) Hazard at the site.</b> The annual exceedance rate vs PGA those rates produce, with the 475-yr and 2475-yr return periods marked. Which model gives the highest design motion depends on where the controlling return period crosses each curve — and how close the site sits. Pull the distance in and the large-event models tend to take over at 2475&nbsp;yr.</p>
-            <p><b>Lock vs segment.</b> Lock M<sub>max</sub> to Wells &amp; Coppersmith (1994) area scaling, or unlock and cap it lower to impose segmentation. Because the moment budget is fixed, capping the largest event doesn't lower hazard everywhere — it redistributes the same moment into more frequent, similar-sized ruptures. <em>Same moment, more often, not bigger.</em></p>
+            <p><b>(c) Where the hazard comes from.</b> Each model's share of exceedances of its own 475-yr (or 2475-yr) motion, by magnitude — a one-fault disaggregation. Under truncated GR the moderate magnitudes do much of the work; under the characteristic models the hazard is bought almost entirely by the big events. Same panel, longer return period: the contribution marches toward M<sub>max</sub>.</p>
+            <p><b>Dip &amp; distance.</b> Width is derived from seismogenic thickness and dip, and R<sub>rup</sub> is the closest distance to the dipping plane — so a site on the hanging-wall side sits closer to the same fault than a site at the same distance on the footwall. Slide the site position through zero and watch the asymmetry.</p>
+            <p><b>Lock vs segment.</b> Lock M<sub>max</sub> to the chosen area-scaling relation (Wells &amp; Coppersmith 1994, Leonard 2014 SCR, or Thingbaijam et al. 2017), or unlock and cap it lower to impose segmentation. Because the moment budget is fixed, capping the largest event doesn't lower hazard everywhere — it redistributes the same moment into more frequent, similar-sized ruptures. <em>Same moment, more often, not bigger.</em></p>
           </div>
         </details>
       </section>
@@ -98,7 +100,7 @@ const validated = oracle.startsWith('openquake');
           <b>Validation.</b> {validated ? oracle : 'OpenQuake hazardlib'} golden fixtures + Vitest, in CI.
           <b>GMM.</b> Allen (2012) cratonic SCR + Seyhan &amp; Stewart (2014) site terms, matched
           to OpenQuake's <code>Allen2012_SS14</code> (toy models retained for comparison).
-          <b>Out of scope.</b> multi-fault rupture, disaggregation, full-chain site response.
+          <b>Out of scope.</b> multi-fault rupture, along-strike rupture floating, full-chain site response.
         </p>
         <p>Type set in Public Sans &amp; Roboto Mono. <a href="https://github.com/james-lagreca/fault-hazard-explorer">Source on GitHub</a>.</p>
       </div>
