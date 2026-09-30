@@ -1,6 +1,7 @@
 // Plotly wrappers for the three figures, themed for the gov-data-portal surface.
 import Plotly from 'plotly.js-dist-min';
 import type { EngineResult, ModelKey } from '../engine/types';
+import type { TreeParam, UncertaintyResult } from '../engine/uncertainty';
 import { MODEL_KEYS } from '../engine/types';
 
 export const MODEL_META: Record<ModelKey, { name: string; color: string; dash: string }> = {
@@ -137,9 +138,30 @@ export function renderMFD(el: HTMLElement, r: EngineResult, shown: Record<ModelK
   );
 }
 
-export function renderHazard(el: HTMLElement, r: EngineResult, shown: Record<ModelKey, boolean>): void {
+export function renderHazard(
+  el: HTMLElement,
+  r: EngineResult,
+  shown: Record<ModelKey, boolean>,
+  band: UncertaintyResult | null = null,
+): void {
   const shownKeys = MODEL_KEYS.filter((k) => shown[k]);
-  const traces = shownKeys.map((k) => ({
+
+  // Epistemic fractile bands, drawn first so the best-estimate lines sit on top.
+  // Zeros can't sit on a log axis; floor them far below the visible window.
+  const bandTraces: Record<string, unknown>[] = [];
+  if (band) {
+    const floor = (v: number) => Math.max(v, 1e-20);
+    for (const k of shownKeys) {
+      const { lo, hi } = band.bandByModel[k];
+      const c = MODEL_META[k].color;
+      bandTraces.push(
+        { x: band.pga, y: lo.map(floor), type: 'scatter', mode: 'lines', line: { color: hexA(c, 0.45), width: 0.8 }, hoverinfo: 'skip' },
+        { x: band.pga, y: hi.map(floor), type: 'scatter', mode: 'lines', line: { color: hexA(c, 0.45), width: 0.8 }, fill: 'tonexty', fillcolor: hexA(c, 0.12), hoverinfo: 'skip' },
+      );
+    }
+  }
+
+  const meanTraces = shownKeys.map((k) => ({
     x: r.pga,
     y: r.hazByModel[k],
     type: 'scatter',
@@ -185,16 +207,131 @@ export function renderHazard(el: HTMLElement, r: EngineResult, shown: Record<Mod
     shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: rp, y1: rp, line: { color: MARK, width: 1, dash: 'dot' } });
     anns.push({ xref: 'paper', x: 0, y: Math.log10(rp), text: label, showarrow: false, font: { color: MARK, size: 10, family: "'Roboto Mono', monospace" }, xanchor: 'left', yanchor: 'bottom', xshift: 3 });
   });
+  if (band && shownKeys.length > 0) {
+    const [q0, q1] = band.quantiles.map((q) => Math.round(q * 100));
+    const which = band.sensitivity.map((sv) => TREE_SHORT[sv.param]).join(' · ');
+    anns.push({ xref: 'paper', yref: 'paper', x: 1, y: 1, text: `shaded: ${q0}–${q1}% (${which})`, showarrow: false, font: { color: INK_FAINT, size: 10, family: "'Roboto Mono', monospace" }, xanchor: 'right', yanchor: 'top' });
+  }
 
   Plotly.react(
     el,
-    traces,
+    [...bandTraces, ...meanTraces],
     baseLayout({
       title: figTitle('(b) Hazard at the site'),
       xaxis: axis({ title: 'PGA (g)', type: 'log', range: xRange }),
       yaxis: axis({ title: 'Annual rate of exceedance', type: 'log', range: [yLo, yHi] }),
       shapes,
       annotations: anns,
+    }),
+    CONFIG,
+  );
+}
+
+const TREE_SHORT: Record<TreeParam, string> = {
+  slip: 'slip',
+  dip: 'dip',
+  thickness: 'thickness',
+  b: 'b',
+  mmax: 'M<sub>max</sub>',
+};
+
+/** Tick label for one tornado row: the input and its low → high branch values. */
+function tornadoLabel(p: TreeParam, lo: number, hi: number): string {
+  switch (p) {
+    case 'slip':
+      return `Slip ${lo.toPrecision(2)}–${hi.toPrecision(2)} mm/yr`;
+    case 'dip':
+      return `Dip ${lo.toFixed(0)}–${hi.toFixed(0)}°`;
+    case 'thickness':
+      return `Thickness ${lo.toFixed(0)}–${hi.toFixed(0)} km`;
+    case 'b':
+      return `b ${lo.toFixed(2)}–${hi.toFixed(2)}`;
+    case 'mmax':
+      return `M<sub>max</sub> ${lo.toFixed(2)}–${hi.toFixed(2)}`;
+  }
+}
+
+/**
+ * One-at-a-time sensitivity: the % change in the model's RP motion when each
+ * logic-tree input sits on its low / high branch (rest central), sorted by
+ * swing, with the full tree's 15–85% range as the reference row at the top.
+ */
+export function renderTornado(
+  el: HTMLElement,
+  u: UncertaintyResult | null,
+  model: ModelKey,
+  rp: '475' | '2475',
+): void {
+  const field = rp === '475' ? 'rp475' : 'rp2475';
+  const meta = MODEL_META[model];
+  const title = figTitle(`(d) What drives the ${rp}-yr PGA — ${meta.name}`);
+  const empty = (text: string) =>
+    Plotly.react(
+      el,
+      [],
+      baseLayout({
+        title,
+        xaxis: axis({ visible: false }),
+        yaxis: axis({ visible: false }),
+        annotations: [{ xref: 'paper', yref: 'paper', x: 0.5, y: 0.5, showarrow: false, text, font: { color: INK_FAINT, size: 12, family: "'Roboto Mono', monospace" } }],
+      }),
+      CONFIG,
+    );
+
+  if (!u || u.sensitivity.length === 0) return empty('tick an input in the logic tree to see its effect');
+  const best = u.bestAtRP[model][field];
+  if (best == null) return empty(`this model doesn't reach the ${rp}-yr rate here`);
+
+  // null (curve never reaches the rate on that branch) → −100%: no motion at that RP.
+  const pct = (g: number | null) => (g == null ? -100 : (g / best - 1) * 100);
+  const rows = u.sensitivity
+    .map((sv) => {
+      const [gl, gh] = sv.byModel[model][field];
+      return { label: tornadoLabel(sv.param, sv.lowValue, sv.highValue), lo: pct(gl), hi: pct(gh), gl, gh };
+    })
+    .sort((a, b) => Math.abs(a.hi - a.lo) - Math.abs(b.hi - b.lo)); // biggest ends up on top
+
+  const [bl, bh] = u.bandAtRP[model][field];
+  const [q0, q1] = u.quantiles.map((q) => Math.round(q * 100));
+  const allLabel = `<b>All · ${q0}–${q1}%</b>`;
+  const fmt = (g: number | null) => (g == null ? 'not reached' : g.toFixed(3) + ' g');
+
+  const y = rows.map((r) => r.label);
+  const traces: Record<string, unknown>[] = [
+    {
+      type: 'bar', orientation: 'h', name: 'low branch', y, x: rows.map((r) => r.lo),
+      marker: { color: hexA(meta.color, 0.35), line: { color: meta.color, width: 1 } },
+      customdata: rows.map((r) => fmt(r.gl)),
+      hovertemplate: '%{y}<br>low branch: %{customdata} (%{x:+.0f}%)<extra></extra>',
+    },
+    {
+      type: 'bar', orientation: 'h', name: 'high branch', y, x: rows.map((r) => r.hi),
+      marker: { color: meta.color },
+      customdata: rows.map((r) => fmt(r.gh)),
+      hovertemplate: '%{y}<br>high branch: %{customdata} (%{x:+.0f}%)<extra></extra>',
+    },
+    {
+      type: 'bar', orientation: 'h', name: `all inputs ${q0}–${q1}%`, y: [allLabel],
+      base: [pct(bl)], x: [pct(bh) - pct(bl)],
+      marker: { color: hexA('#1b1b1b', 0.12), line: { color: INK, width: 1 } },
+      customdata: [[fmt(bl), fmt(bh)]],
+      hovertemplate: `all inputs: %{customdata[0]} – %{customdata[1]}<extra></extra>`,
+    },
+  ];
+
+  const ext = Math.max(10, ...rows.flatMap((r) => [Math.abs(r.lo), Math.abs(r.hi)]), Math.abs(pct(bl)), Math.abs(pct(bh)));
+  Plotly.react(
+    el,
+    traces,
+    baseLayout({
+      title,
+      barmode: 'overlay',
+      bargap: 0.35,
+      showlegend: true,
+      legend: { orientation: 'h', x: 0, y: -0.22, yanchor: 'top', font: { size: 10.5 } },
+      margin: { l: 150, r: 16, t: 34, b: 46 },
+      xaxis: axis({ title: `change vs best estimate (${best.toFixed(3)} g)`, ticksuffix: '%', range: [-ext * 1.1, ext * 1.1], zeroline: true, zerolinecolor: INK, zerolinewidth: 1 }),
+      yaxis: axis({ categoryorder: 'array', categoryarray: [...y, allLabel], automargin: true, gridcolor: 'rgba(0,0,0,0)' }),
     }),
     CONFIG,
   );

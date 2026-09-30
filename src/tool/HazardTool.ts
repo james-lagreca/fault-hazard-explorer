@@ -1,13 +1,16 @@
 // Island entry: wires controls ↔ engine ↔ plots ↔ readout.
 import { compute } from '../engine/index';
+import { runLogicTree } from '../engine/uncertainty';
 import { MODEL_KEYS } from '../engine/types';
 import type { ModelKey } from '../engine/types';
 import { MAX_WIDTH_KM } from '../engine/geometry';
-import { MODEL_META, renderMFD, renderHazard, renderDeagg, resizePlots } from './plots';
+import { MODEL_META, renderMFD, renderHazard, renderDeagg, renderTornado, resizePlots } from './plots';
 import { applyPreset, readState, syncLabels } from './controls';
+import { initTreeEditor, readTree, refreshTreeLabels } from './treeEditor';
 
 const shown: Record<ModelKey, boolean> = { GR: true, TGR: true, CHAR: true, MMAX: true };
 let deaggRP: '475' | '2475' = '475';
+let torRP: '475' | '2475' = '475';
 
 const $ = (id: string) => document.getElementById(id);
 const setHTML = (id: string, html: string) => {
@@ -23,14 +26,21 @@ function render(): void {
   const mfdEl = $('mfd');
   const hazEl = $('haz');
   const deaggEl = $('deagg');
-  if (!mfdEl || !hazEl || !deaggEl) return;
+  const torEl = $('tornado');
+  if (!mfdEl || !hazEl || !deaggEl || !torEl) return;
 
-  const { params: p, geom } = readState();
+  const { params: p, geom, inputs } = readState();
   const r = compute(p);
+  const tree = readTree();
+  refreshTreeLabels(inputs);
+  const u = Object.keys(tree).length > 0 ? runLogicTree(inputs, tree) : null;
 
   renderMFD(mfdEl, r, shown);
-  renderHazard(hazEl, r, shown);
+  const showBand = ($('band') as HTMLInputElement | null)?.checked ?? false;
+  renderHazard(hazEl, r, shown, showBand ? u : null);
   renderDeagg(deaggEl, r, shown, deaggRP);
+  const torModel = (($('tormodel') as HTMLSelectElement | null)?.value ?? 'TGR') as ModelKey;
+  renderTornado(torEl, u, torModel, torRP);
 
   // Mmax control: disabled & mirrored when locked to scaling.
   const mmaxInput = $('mmax') as HTMLInputElement | null;
@@ -84,11 +94,24 @@ function render(): void {
 }
 
 export function initHazardTool(): void {
-  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel'];
+  // The logic tree re-runs compute() per branch, so coalesce bursts of slider
+  // events into one render per frame.
+  let pending = 0;
+  const schedule = () => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => {
+      pending = 0;
+      syncLabels();
+      render();
+    });
+  };
+  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel', 'band', 'tormodel'];
   for (const id of inputs) {
     const el = $(id);
-    if (el) el.addEventListener('input', () => { syncLabels(); render(); });
+    if (el) el.addEventListener('input', schedule);
   }
+  const ltEl = $('lteditor');
+  if (ltEl) initTreeEditor(ltEl, schedule);
 
   document.querySelectorAll<HTMLButtonElement>('.chip').forEach((c) =>
     c.addEventListener('click', () => {
@@ -100,17 +123,23 @@ export function initHazardTool(): void {
     }),
   );
 
-  document.querySelectorAll<HTMLButtonElement>('.rpbtn').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      deaggRP = (btn.dataset.rp === '2475' ? '2475' : '475');
-      document.querySelectorAll<HTMLButtonElement>('.rpbtn').forEach((b) => {
-        const on = b === btn;
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-pressed', String(on));
-      });
-      render();
-    }),
-  );
+  // Two independent return-period toggles: deaggregation (c) and tornado (d).
+  const wireRP = (groupId: string, set: (rp: '475' | '2475') => void) => {
+    const btns = document.querySelectorAll<HTMLButtonElement>(`#${groupId} .rpbtn`);
+    btns.forEach((btn) =>
+      btn.addEventListener('click', () => {
+        set(btn.dataset.rp === '2475' ? '2475' : '475');
+        btns.forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+        render();
+      }),
+    );
+  };
+  wireRP('rprow', (rp) => (deaggRP = rp));
+  wireRP('torrp', (rp) => (torRP = rp));
 
   document.querySelectorAll<HTMLButtonElement>('.preset').forEach((btn) =>
     btn.addEventListener('click', () => {
@@ -127,7 +156,8 @@ export function initHazardTool(): void {
       const mfdEl = $('mfd');
       const hazEl = $('haz');
       const deaggEl = $('deagg');
-      if (mfdEl && hazEl && deaggEl) resizePlots(mfdEl, hazEl, deaggEl);
+      const torEl = $('tornado');
+      if (mfdEl && hazEl && deaggEl && torEl) resizePlots(mfdEl, hazEl, deaggEl, torEl);
     });
   });
 

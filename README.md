@@ -25,6 +25,22 @@ The engine reproduces, bit-for-bit against OpenQuake:
 - the **Allen (2012)** cratonic-SCR GMPE with the Seyhan & Stewart (2014) site
   terms (`Allen2012_SS14`), with a Vs30 control driving the site response.
 
+## Epistemic uncertainty
+
+`src/engine/uncertainty.ts` runs a user-defined logic tree over the fault
+inputs — slip rate, dip, seismogenic thickness, b-value and Mmax. Each input can
+be switched on and given 1–5 weighted branches (the tool's editor); branches
+follow the sliders — slip-rate branches are factors on the slider value, the
+rest are offsets — and weights are normalized per input. The default tree is
+Keefer–Bodily three-point (×/÷ 2, ±15°, ±3 km, ±0.15, ±0.2 at weights 0.185 /
+0.63 / 0.185). Every branch is plain `compute()` on perturbed inputs, so a dip
+branch moves width, area, moment rate, scaling Mmax and Rrup together. The tree
+is collapsed to weighted 15th / 85th percentile hazard curves (same statistic as
+`hazardlib.stats.quantile_curve`), shaded on panel (b); panel (d) is a
+one-at-a-time tornado of each input's lowest / highest branch in the 475 /
+2475-yr PGA. The best-estimate curves and the OpenQuake parity suite are
+unchanged.
+
 ## Develop
 
 ```bash
@@ -49,7 +65,7 @@ npm run fixtures   # regenerate fixtures (uses hazardlib if installed)
 ## Layout
 
 ```
-src/engine/     pure compute() — moment, scaling, MFDs, GMMs, hazard integral
+src/engine/     pure compute() — moment, scaling, MFDs, GMMs, hazard integral, logic tree
 src/tool/       island: controls ↔ engine ↔ Plotly plots
 src/components/ HazardTool.astro (the interactive figure)
 src/pages/      index.astro (editorial page wrapping the tool)

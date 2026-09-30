@@ -5,6 +5,8 @@
 // (positive = hanging-wall side) sets the rupture distance.
 
 import type { GmpeKey, Params, ScalingKey } from '../engine/types';
+import { paramsFromInputs } from '../engine/uncertainty';
+import type { FaultInputs } from '../engine/uncertainty';
 import { widthFromDip, rrupFromTrace } from '../engine/geometry';
 import type { SiteGeometry } from '../engine/geometry';
 
@@ -30,6 +32,8 @@ export interface Geometry extends SiteGeometry {
 export interface ToolState {
   params: Params;
   geom: Geometry;
+  /** The raw fault description the logic tree perturbs. */
+  inputs: FaultInputs;
 }
 
 function readGeometry(): Geometry {
@@ -42,23 +46,24 @@ function readGeometry(): Geometry {
 }
 
 export function readState(): ToolState {
-  const lockMax = ($('lockmax') as HTMLInputElement).checked;
   const geom = readGeometry();
-  const params: Params = {
+  const inputs: FaultInputs = {
     b: +$('b').value,
     slip: slipFromSlider(+$('slip').value),
     L: +$('len').value,
-    W: geom.W,
+    dip: geom.dip,
+    thickness: geom.thickness,
+    ztor: geom.ztor,
+    x: geom.x,
     Mmin: +$('mmin').value,
     Mmax: +$('mmax').value,
-    lockMax,
-    R: geom.rrup,
+    lockMax: ($('lockmax') as HTMLInputElement).checked,
     vs30: +$('vs30').value,
     gmpe: ($('gmpe') as unknown as HTMLSelectElement).value as GmpeKey,
     scaling: ($('scalerel') as unknown as HTMLSelectElement).value as ScalingKey,
     binWidth: DISPLAY_BIN_WIDTH,
   };
-  return { params, geom };
+  return { params: paramsFromInputs(inputs), geom, inputs };
 }
 
 export function syncLabels(): void {

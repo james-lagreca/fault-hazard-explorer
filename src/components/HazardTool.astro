@@ -77,6 +77,21 @@
       </div>
 
       <div class="card">
+        <p class="eyebrow">Logic tree · epistemic uncertainty</p>
+        <div id="lteditor"></div>
+        <label class="check"><input type="checkbox" id="band" checked>
+          Shade the 15–85% band on the hazard plot</label>
+        <p class="note">Tick an input to make it uncertain and give it up to five weighted
+          branches. Slip-rate branches multiply the slider value; the others add to it, so
+          the whole branch set moves with the sliders (the "→" column shows where each lands
+          now). Weights are normalized within each input. The full tree
+          (<span id="vlt_n">81 branches</span>) is collapsed to weighted 15th and 85th
+          percentile curves. A dip or thickness branch changes the width, area, moment
+          rate, scaling M<sub>max</sub> and R<sub>rup</sub> together; M<sub>max</sub>
+          offsets apply to that branch's scaling magnitude when locked.</p>
+      </div>
+
+      <div class="card">
         <p class="eyebrow">Presets</p>
         <div class="presets">
           <button class="preset" data-p="se">SE Australia (SCR)</button>
@@ -99,6 +114,22 @@
           <button class="rpbtn" data-rp="2475" aria-pressed="false">2475 yr</button>
         </div>
         <div id="deagg" class="plot plot-short"></div>
+      </div>
+
+      <div class="card plot-card tor-card">
+        <div class="tor-row">
+          <select id="tormodel" aria-label="Model for the sensitivity chart">
+            <option value="GR">GR (no cap)</option>
+            <option value="TGR" selected>Truncated GR</option>
+            <option value="CHAR">Characteristic</option>
+            <option value="MMAX">Mₘₐₓ</option>
+          </select>
+          <div class="rp-group" id="torrp" role="group" aria-label="Sensitivity return period">
+            <button class="rpbtn on" data-rp="475" aria-pressed="true">475 yr</button>
+            <button class="rpbtn" data-rp="2475" aria-pressed="false">2475 yr</button>
+          </div>
+        </div>
+        <div id="tornado" class="plot plot-tornado"></div>
       </div>
 
       <div class="tiles">
@@ -276,6 +307,45 @@
   .rpbtn:hover:not(.on) { background: var(--panel); }
   .rpbtn.on { background: var(--navy); color: #fff; }
   .rpbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  /* tornado: controls sit in flow above the plot so they never cover its title */
+  .tor-row { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.15rem 0.25rem 0; }
+  .tor-row select { width: auto; padding: 0.25rem 0.4rem; font-size: 0.68rem; }
+  .plot-tornado { height: 300px; }
+  @media (max-width: 860px) { .plot-tornado { height: 320px; } }
+  .rp-group { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: #fff; }
+
+  /* logic-tree rows */
+  #lteditor + .check { margin-top: 0.8rem; }
+  /* :global — the editor is built at runtime, so scoped selectors miss it */
+  #lteditor :global(.ltsec) { padding: 0.55rem 0 0.7rem; border-bottom: 1px solid var(--border); }
+  #lteditor :global(.ltsec:first-child) { padding-top: 0; }
+  #lteditor :global(.ltsec.off .lttab),
+  #lteditor :global(.ltsec.off .ltadd) { opacity: 0.35; pointer-events: none; }
+  #lteditor :global(.ltrow) { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.78rem; color: var(--ink-secondary); margin-bottom: 0.35rem; }
+  #lteditor :global(.ltname) { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; user-select: none; }
+  #lteditor :global(.ltname input) { accent-color: var(--primary); width: 14px; height: 14px; margin: 0; }
+  #lteditor :global(.ltsum) { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-muted); }
+  #lteditor :global(.ltsum.warn) { color: #b50909; }
+  #lteditor :global(.lttab) { width: 100%; border-collapse: collapse; font-size: 0.72rem; table-layout: fixed; }
+  #lteditor :global(.lttab th) { text-align: left; font-size: 9.5px; padding: 2px 4px; background: none; border-bottom: 1px solid var(--border); }
+  #lteditor :global(.lttab th:last-child) { width: 1.6rem; }
+  #lteditor :global(.lttab td) { padding: 2px 4px 2px 0; }
+  #lteditor :global(.lttab input) {
+    width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 0.72rem;
+    padding: 0.2rem 0.3rem; border: 1px solid var(--border-strong); border-radius: var(--radius); background: #fff; color: var(--ink);
+  }
+  #lteditor :global(.lttab input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 0; }
+  #lteditor :global(.ltabs) { font-family: var(--font-mono); color: var(--ink-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #lteditor :global(.ltabs .u) { color: var(--ink-muted); font-size: 0.64rem; }
+  #lteditor :global(.ltdel),
+  #lteditor :global(.ltadd) {
+    font-family: var(--font-mono); font-size: 0.7rem; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: #fff; color: var(--ink-secondary); cursor: pointer;
+  }
+  #lteditor :global(.ltdel) { width: 1.4rem; padding: 0.1rem 0; }
+  #lteditor :global(.ltadd) { margin-top: 0.35rem; padding: 0.2rem 0.5rem; }
+  #lteditor :global(button:disabled) { opacity: 0.35; cursor: default; }
+  #lteditor :global(button:hover:not(:disabled)) { background: var(--panel); color: var(--ink); }
 
   /* readout */
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; }

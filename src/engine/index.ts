@@ -20,10 +20,14 @@ const SCALING_FN: Record<ScalingKey, (area_km2: number) => number> = {
   tmg17: thingbaijam2017Reverse,
 };
 
+/** Magnitude implied by the rupture area under the chosen scaling relation. */
+export function scalingMagnitude(params: Params): number {
+  return SCALING_FN[params.scaling ?? 'wc94'](params.L * params.W);
+}
+
 export function compute(params: Params): EngineResult {
   const binWidth = params.binWidth ?? DEFAULT_BIN_WIDTH;
-  const area = params.L * params.W;
-  const scalingMag = SCALING_FN[params.scaling ?? 'wc94'](area);
+  const scalingMag = scalingMagnitude(params);
   const Mmax = params.lockMax ? scalingMag : params.Mmax;
   const mRate = momentRate(params.L, params.W, params.slip);
   const gmm = makeGmm(params.gmpe, params.R, params.vs30);
