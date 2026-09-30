@@ -1,6 +1,7 @@
 // Plotly wrappers for the three figures, themed for the gov-data-portal surface.
 import Plotly from 'plotly.js-dist-min';
 import type { EngineResult, ModelKey } from '../engine/types';
+import type { UncertaintyResult } from '../engine/uncertainty';
 import { MODEL_KEYS } from '../engine/types';
 
 export const MODEL_META: Record<ModelKey, { name: string; color: string; dash: string }> = {
@@ -137,9 +138,30 @@ export function renderMFD(el: HTMLElement, r: EngineResult, shown: Record<ModelK
   );
 }
 
-export function renderHazard(el: HTMLElement, r: EngineResult, shown: Record<ModelKey, boolean>): void {
+export function renderHazard(
+  el: HTMLElement,
+  r: EngineResult,
+  shown: Record<ModelKey, boolean>,
+  band: UncertaintyResult | null = null,
+): void {
   const shownKeys = MODEL_KEYS.filter((k) => shown[k]);
-  const traces = shownKeys.map((k) => ({
+
+  // Epistemic fractile bands, drawn first so the best-estimate lines sit on top.
+  // Zeros can't sit on a log axis; floor them far below the visible window.
+  const bandTraces: Record<string, unknown>[] = [];
+  if (band) {
+    const floor = (v: number) => Math.max(v, 1e-20);
+    for (const k of shownKeys) {
+      const { lo, hi } = band.bandByModel[k];
+      const c = MODEL_META[k].color;
+      bandTraces.push(
+        { x: band.pga, y: lo.map(floor), type: 'scatter', mode: 'lines', line: { color: hexA(c, 0.45), width: 0.8 }, hoverinfo: 'skip' },
+        { x: band.pga, y: hi.map(floor), type: 'scatter', mode: 'lines', line: { color: hexA(c, 0.45), width: 0.8 }, fill: 'tonexty', fillcolor: hexA(c, 0.12), hoverinfo: 'skip' },
+      );
+    }
+  }
+
+  const meanTraces = shownKeys.map((k) => ({
     x: r.pga,
     y: r.hazByModel[k],
     type: 'scatter',
@@ -185,10 +207,14 @@ export function renderHazard(el: HTMLElement, r: EngineResult, shown: Record<Mod
     shapes.push({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: rp, y1: rp, line: { color: MARK, width: 1, dash: 'dot' } });
     anns.push({ xref: 'paper', x: 0, y: Math.log10(rp), text: label, showarrow: false, font: { color: MARK, size: 10, family: "'Roboto Mono', monospace" }, xanchor: 'left', yanchor: 'bottom', xshift: 3 });
   });
+  if (band && shownKeys.length > 0) {
+    const [q0, q1] = band.quantiles.map((q) => Math.round(q * 100));
+    anns.push({ xref: 'paper', yref: 'paper', x: 1, y: 1, text: `shaded: ${q0}–${q1}% (slip · b · M<sub>max</sub>)`, showarrow: false, font: { color: INK_FAINT, size: 10, family: "'Roboto Mono', monospace" }, xanchor: 'right', yanchor: 'top' });
+  }
 
   Plotly.react(
     el,
-    traces,
+    [...bandTraces, ...meanTraces],
     baseLayout({
       title: figTitle('(b) Hazard at the site'),
       xaxis: axis({ title: 'PGA (g)', type: 'log', range: xRange }),

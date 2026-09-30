@@ -1,5 +1,6 @@
 // Island entry: wires controls ↔ engine ↔ plots ↔ readout.
 import { compute } from '../engine/index';
+import { hazardBands } from '../engine/uncertainty';
 import { MODEL_KEYS } from '../engine/types';
 import type { ModelKey } from '../engine/types';
 import { MAX_WIDTH_KM } from '../engine/geometry';
@@ -29,7 +30,8 @@ function render(): void {
   const r = compute(p);
 
   renderMFD(mfdEl, r, shown);
-  renderHazard(hazEl, r, shown);
+  const showBand = ($('band') as HTMLInputElement | null)?.checked ?? false;
+  renderHazard(hazEl, r, shown, showBand ? hazardBands(p) : null);
   renderDeagg(deaggEl, r, shown, deaggRP);
 
   // Mmax control: disabled & mirrored when locked to scaling.
@@ -84,7 +86,7 @@ function render(): void {
 }
 
 export function initHazardTool(): void {
-  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel'];
+  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel', 'band'];
   for (const id of inputs) {
     const el = $(id);
     if (el) el.addEventListener('input', () => { syncLabels(); render(); });

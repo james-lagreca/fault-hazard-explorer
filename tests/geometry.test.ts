@@ -6,7 +6,8 @@ import { widthFromDip, rrupFromTrace, MAX_WIDTH_KM } from '../src/engine/geometr
 import { thingbaijam2017Reverse, wc1994 } from '../src/engine/scaling';
 import { deaggregate, hazardCurve, ncdf } from '../src/engine/hazard';
 import { makeGmm } from '../src/engine/gmpe';
-import { compute } from '../src/engine/index';
+import { compute, MODEL_KEYS } from '../src/engine/index';
+import { hazardBands, weightedQuantile } from '../src/engine/uncertainty';
 
 describe('widthFromDip', () => {
   it('vertical fault: W equals the seismogenic thickness', () => {
@@ -99,5 +100,35 @@ describe('scaling selection in compute()', () => {
   });
   it('honors the tmg17 selection', () => {
     expect(compute({ ...base, scaling: 'tmg17' }).scalingMag).toBeCloseTo(thingbaijam2017Reverse(600), 12);
+  });
+});
+
+describe('hazardBands (epistemic fractiles)', () => {
+  const p = {
+    b: 1.0, slip: 0.1, L: 60, W: 18, Mmin: 4.5, Mmax: 7.0, lockMax: true,
+    R: 10, vs30: 760, gmpe: 'allen' as const, scaling: 'wc94' as const, binWidth: 0.05,
+  };
+
+  it('weightedQuantile matches hazardlib quantile_curve interpolation', () => {
+    // cum weights 0.2, 0.7, 1.0 over sorted [1, 2, 3]
+    expect(weightedQuantile([3, 1, 2], [0.3, 0.2, 0.5], 0.1)).toBe(1);
+    expect(weightedQuantile([3, 1, 2], [0.3, 0.2, 0.5], 0.45)).toBeCloseTo(1.5, 12);
+    expect(weightedQuantile([3, 1, 2], [0.3, 0.2, 0.5], 0.85)).toBeCloseTo(2.5, 12);
+  });
+
+  it('brackets the best-estimate curve for every model', () => {
+    const r = compute(p);
+    const u = hazardBands(p);
+    expect(u.pga).toEqual(r.pga);
+    for (const k of MODEL_KEYS) {
+      const { lo, hi } = u.bandByModel[k];
+      for (let i = 0; i < r.pga.length; i++) {
+        expect(lo[i]!).toBeLessThanOrEqual(hi[i]! * (1 + 1e-12));
+        expect(lo[i]!).toBeLessThanOrEqual(r.hazByModel[k][i]! * (1 + 1e-12));
+        expect(hi[i]!).toBeGreaterThanOrEqual(r.hazByModel[k][i]! * (1 - 1e-12));
+      }
+      // non-degenerate at the low-PGA plateau (slip ×/÷ 2 alone spreads it)
+      expect(hi[0]! / lo[0]!).toBeGreaterThan(1.2);
+    }
   });
 });
