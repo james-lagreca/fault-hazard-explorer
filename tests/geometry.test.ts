@@ -7,7 +7,7 @@ import { thingbaijam2017Reverse, wc1994 } from '../src/engine/scaling';
 import { deaggregate, hazardCurve, ncdf } from '../src/engine/hazard';
 import { makeGmm } from '../src/engine/gmpe';
 import { compute, MODEL_KEYS } from '../src/engine/index';
-import { branchValues, paramsFromInputs, runLogicTree, weightedQuantile } from '../src/engine/uncertainty';
+import { DEFAULT_TREE, branchInputValue, paramsFromInputs, runLogicTree, weightedQuantile } from '../src/engine/uncertainty';
 import type { FaultInputs } from '../src/engine/uncertainty';
 
 describe('widthFromDip', () => {
@@ -109,7 +109,7 @@ describe('logic tree (epistemic fractiles + sensitivity)', () => {
     b: 1.0, slip: 0.3, L: 40, dip: 45, thickness: 15, ztor: 0, x: 10, Mmin: 5.0, Mmax: 7.0,
     lockMax: true, vs30: 760, gmpe: 'allen', scaling: 'wc94', binWidth: 0.05,
   };
-  const all = { slip: 2, dip: 15, thickness: 3, b: 0.15, mmax: 0.2 };
+  const all = DEFAULT_TREE;
 
   it('weightedQuantile matches hazardlib quantile_curve interpolation', () => {
     // cum weights 0.2, 0.7, 1.0 over sorted [1, 2, 3]
@@ -126,7 +126,7 @@ describe('logic tree (epistemic fractiles + sensitivity)', () => {
 
   it('slip-only tree: 15th percentile is exactly the ÷2 branch', () => {
     const r = compute(paramsFromInputs(fi));
-    const u = runLogicTree(fi, { slip: 2 });
+    const u = runLogicTree(fi, { slip: DEFAULT_TREE.slip });
     expect(u.nBranches).toBe(3);
     for (const k of MODEL_KEYS)
       for (let i = 0; i < r.pga.length; i++)
@@ -167,7 +167,31 @@ describe('logic tree (epistemic fractiles + sensitivity)', () => {
   });
 
   it('dip branches clamp to the physical range', () => {
-    expect(branchValues('dip', { ...fi, dip: 85 }, 15)).toEqual([70, 85, 90]);
-    expect(branchValues('dip', { ...fi, dip: 15 }, 15)).toEqual([10, 15, 30]);
+    expect([-15, 0, 15].map((v) => branchInputValue('dip', { ...fi, dip: 85 }, v))).toEqual([70, 85, 90]);
+    expect([-15, 0, 15].map((v) => branchInputValue('dip', { ...fi, dip: 15 }, v))).toEqual([10, 15, 30]);
+  });
+
+  it('user-defined branches: any count, weights normalized per input', () => {
+    const r = compute(paramsFromInputs(fi));
+    // slip ×1 / ×2 at equal weight: cum weights 0.5, 1.0 → 15% clamps to ×1, 85% = ×1.7
+    for (const w of [0.5, 2]) {
+      const u = runLogicTree(fi, { slip: [{ value: 1, weight: w }, { value: 2, weight: w }] });
+      expect(u.nBranches).toBe(2);
+      const i = 20;
+      expect(u.bandByModel.TGR.lo[i]!).toBeCloseTo(r.hazByModel.TGR[i]!, 15);
+      expect(u.bandByModel.TGR.hi[i]! / r.hazByModel.TGR[i]!).toBeCloseTo(1.7, 12);
+    }
+  });
+
+  it('asymmetric branches: tornado uses the lowest / highest branch; bad rows dropped', () => {
+    const u = runLogicTree(fi, {
+      dip: [{ value: 20, weight: 0.3 }, { value: -5, weight: 0.7 }, { value: NaN, weight: 0.5 }, { value: 30, weight: 0 }],
+      mmax: [{ value: 0.1, weight: 1 }],
+    });
+    expect(u.nBranches).toBe(2);
+    const dip = u.sensitivity.find((s) => s.param === 'dip')!;
+    expect([dip.lowValue, dip.highValue]).toEqual([40, 65]);
+    const mm = u.sensitivity.find((s) => s.param === 'mmax')!;
+    expect(mm.lowValue).toBeCloseTo(compute(paramsFromInputs(fi)).scalingMag + 0.1, 12);
   });
 });

@@ -60,47 +60,79 @@ export function paramsFromInputs(fi: FaultInputs): Params {
 }
 
 /**
- * Keefer & Bodily (1983) three-point discretization: each uncertain input's
- * 5th / 50th / 95th percentiles, weighted 0.185 / 0.63 / 0.185.
+ * Keefer & Bodily (1983) three-point discretization weights (5th / 50th / 95th
+ * percentiles) — used for the default tree.
  */
-export const BRANCH_WEIGHTS = [0.185, 0.63, 0.185] as const;
+export const KB_WEIGHTS = [0.185, 0.63, 0.185] as const;
 
 export type TreeParam = 'slip' | 'dip' | 'thickness' | 'b' | 'mmax';
 export const TREE_PARAMS: readonly TreeParam[] = ['slip', 'dip', 'thickness', 'b', 'mmax'] as const;
 
 /**
- * Enabled branch sets and their 5th/95th-percentile spreads. `slip` is a
- * multiplicative factor (÷f / ×f); the rest are ± offsets in their own units
- * (degrees, km, b units, magnitude units). `mmax` offsets the scaling
- * magnitude when Mmax is locked to area scaling. Omit a key to hold it fixed.
+ * How a branch value is read. Branches follow the best-estimate inputs: slip
+ * rate branches are multiplicative factors on the slider value, the rest are
+ * additive offsets (degrees, km, b units, magnitude units). The `mmax` offset
+ * applies to the scaling magnitude when Mmax is locked to area scaling.
  */
-export type LogicTree = Partial<Record<TreeParam, number>>;
-
-export const DEFAULT_SPREADS: Record<TreeParam, number> = {
-  slip: 2,
-  dip: 15,
-  thickness: 3,
-  b: 0.15,
-  mmax: 0.2,
+export const TREE_MODE: Record<TreeParam, 'factor' | 'offset'> = {
+  slip: 'factor',
+  dip: 'offset',
+  thickness: 'offset',
+  b: 'offset',
+  mmax: 'offset',
 };
 
-/** The (low, central, high) input values of one branch set, clamped to physical limits. */
-export function branchValues(param: TreeParam, fi: FaultInputs, spread: number): [number, number, number] {
+/** One logic-tree branch: a factor/offset (per TREE_MODE) and its weight. */
+export interface Branch {
+  value: number;
+  weight: number;
+}
+
+/**
+ * User-defined branch sets, one per uncertain input. Weights within an input
+ * are normalized to sum to 1; omit an input (or give it no branches) to hold
+ * it at its best estimate.
+ */
+export type LogicTree = Partial<Record<TreeParam, Branch[]>>;
+
+const kb = (lo: number, mid: number, hi: number): Branch[] =>
+  [lo, mid, hi].map((value, i) => ({ value, weight: KB_WEIGHTS[i]! }));
+
+export const DEFAULT_TREE: Record<TreeParam, Branch[]> = {
+  slip: kb(0.5, 1, 2),
+  dip: kb(-15, 0, 15),
+  thickness: kb(-3, 0, 3),
+  b: kb(-0.15, 0, 0.15),
+  mmax: kb(-0.2, 0, 0.2),
+};
+
+/** The central (identity) branch value for an input: factor 1 or offset 0. */
+export const identityValue = (p: TreeParam): number => (TREE_MODE[p] === 'factor' ? 1 : 0);
+
+/**
+ * The absolute input a branch resolves to, clamped to physical limits. For
+ * `mmax` this is the offset itself (it is applied after scaling is resolved).
+ */
+export function branchInputValue(param: TreeParam, fi: FaultInputs, value: number): number {
   switch (param) {
     case 'slip':
-      return [fi.slip / spread, fi.slip, fi.slip * spread];
+      return fi.slip * Math.max(value, 1e-6);
     case 'dip':
-      return [Math.max(fi.dip - spread, 10), fi.dip, Math.min(fi.dip + spread, 90)];
+      return Math.min(Math.max(fi.dip + value, 10), 90);
     case 'thickness':
-      return [Math.max(fi.thickness - spread, 2), fi.thickness, fi.thickness + spread];
+      return Math.max(fi.thickness + value, 2);
     case 'b':
-      return [Math.max(fi.b - spread, 0.3), fi.b, fi.b + spread];
+      return Math.max(fi.b + value, 0.3);
     case 'mmax':
-      return [-spread, 0, spread]; // offsets, applied after scaling
+      return value;
   }
 }
 
-/** Apply one branch choice (0 = low, 1 = central, 2 = high) to the inputs. */
+/** Best-estimate Mmax the `mmax` offsets are applied to. */
+export function bestMmax(fi: FaultInputs): number {
+  return fi.lockMax ? scalingMagnitude(paramsFromInputs(fi)) : fi.Mmax;
+}
+
 function applyBranch(fi: FaultInputs, param: TreeParam, v: number): FaultInputs {
   switch (param) {
     case 'slip':
@@ -112,8 +144,15 @@ function applyBranch(fi: FaultInputs, param: TreeParam, v: number): FaultInputs 
     case 'b':
       return { ...fi, b: v };
     case 'mmax':
-      return fi; // handled in paramsFor (needs the scaling magnitude)
+      return fi; // handled in hazardFor (needs the scaling magnitude)
   }
+}
+
+/** Drop unusable branches (non-finite, non-positive weight) and normalize weights. */
+export function cleanBranches(branches: Branch[] | undefined): Branch[] {
+  const ok = (branches ?? []).filter((b) => Number.isFinite(b.value) && Number.isFinite(b.weight) && b.weight > 0);
+  const total = ok.reduce((s, b) => s + b.weight, 0);
+  return ok.map((b) => ({ value: b.value, weight: b.weight / total }));
 }
 
 export interface HazardBand {
@@ -123,10 +162,10 @@ export interface HazardBand {
 
 export interface Sensitivity {
   param: TreeParam;
-  /** Input values of the low / high branch (for mmax: the resulting magnitudes). */
+  /** Absolute input values of the lowest / highest branch (for mmax: magnitudes). */
   lowValue: number;
   highValue: number;
-  /** Per model: PGA (g) at the RP on the low / high branch, holding the rest central. */
+  /** Per model: PGA (g) at the RP on the low / high branch, the rest at best estimate. */
   byModel: Record<ModelKey, { rp475: [number | null, number | null]; rp2475: [number | null, number | null] }>;
 }
 
@@ -221,32 +260,43 @@ export function runLogicTree(
   tree: LogicTree,
   quantiles: [number, number] = [0.15, 0.85],
 ): UncertaintyResult {
-  const enabled = TREE_PARAMS.filter((p) => tree[p] != null);
-  const values = {} as Record<TreeParam, [number, number, number]>;
-  for (const p of enabled) values[p] = branchValues(p, fi, tree[p]!);
+  const sets = {} as Record<TreeParam, Branch[]>;
+  const enabled = TREE_PARAMS.filter((p) => {
+    const c = cleanBranches(tree[p]);
+    if (c.length > 0) sets[p] = c;
+    return c.length > 0;
+  });
   const physical = enabled.filter((p) => p !== 'slip');
-  const slipFactors: number[] = tree.slip != null ? values.slip.map((s) => s / fi.slip) : [1];
-  const slipWeights: number[] = tree.slip != null ? [...BRANCH_WEIGHTS] : [1];
+  const slipSet: Branch[] = sets.slip ?? [{ value: 1, weight: 1 }];
+  const Mbest = bestMmax(fi);
 
-  // choice[p] ∈ {0,1,2}; missing → central.
+  // Branch choice per physical input: an index into its set, or -1 for the
+  // best estimate (the slider value). All -1 → exactly compute(best inputs).
+  type Choice = Partial<Record<TreeParam, number>>;
+  const valueOf = (p: TreeParam, choice: Choice): number => {
+    const i = choice[p] ?? -1;
+    return i < 0 ? identityValue(p) : sets[p][i]!.value;
+  };
   const cache = new Map<string, Record<ModelKey, number[]>>();
   let pga: number[] = [];
-  const hazardFor = (choice: Partial<Record<TreeParam, number>>): Record<ModelKey, number[]> => {
-    const key = physical.map((p) => choice[p] ?? 1).join('');
+  const hazardFor = (choice: Choice): Record<ModelKey, number[]> => {
+    const vals = physical.map((p) => valueOf(p, choice));
+    const key = vals.join('|');
     const hit = cache.get(key);
     if (hit) return hit;
     let f = fi;
-    for (const p of physical) f = applyBranch(f, p, values[p][choice[p] ?? 1]!);
-    if (/[02]/.test(key)) f = { ...f, binWidth: Math.max(fi.binWidth ?? 0.1, TREE_MIN_BIN_WIDTH) };
+    physical.forEach((p, j) => {
+      if (p !== 'mmax') f = applyBranch(f, p, branchInputValue(p, fi, vals[j]!));
+    });
+    const exact = physical.every((p, j) => vals[j] === identityValue(p));
+    if (!exact) f = { ...f, binWidth: Math.max(fi.binWidth ?? 0.1, TREE_MIN_BIN_WIDTH) };
     const params = paramsFromInputs(f);
-    if (tree.mmax != null) {
-      const dm = values.mmax[choice.mmax ?? 1]!;
-      if (dm !== 0) {
-        // Resolve the locked scaling magnitude first, then offset it.
-        const base = params.lockMax ? scalingMagnitude(params) : params.Mmax;
-        params.lockMax = false;
-        params.Mmax = base + dm;
-      }
+    const dm = physical.includes('mmax') ? valueOf('mmax', choice) : 0;
+    if (dm !== 0) {
+      // Offset the best-estimate Mmax of *this* branch's geometry (a dip or
+      // thickness branch changes the area, hence the scaling magnitude).
+      params.Mmax = (params.lockMax ? scalingMagnitude(params) : params.Mmax) + dm;
+      params.lockMax = false;
     }
     const r = compute(params);
     pga = r.pga;
@@ -254,28 +304,29 @@ export function runLogicTree(
     return r.hazByModel;
   };
 
-  // Full tree: cartesian product over physical branches × slip factors. Slip
-  // branches keep a reference to the physical curve plus a scale factor.
+  // Full tree: cartesian product over physical branch sets × slip factors.
+  // Slip is linear in hazard, so slip branches reference a curve + a factor.
   const bases: Record<ModelKey, number[]>[] = [];
   const factors: number[] = [];
   const wList: number[] = [];
-  const nPhys = Math.pow(3, physical.length);
+  const sizes = physical.map((p) => sets[p].length);
+  const nPhys = sizes.reduce((a, b) => a * b, 1);
   for (let code = 0; code < nPhys; code++) {
-    const choice: Partial<Record<TreeParam, number>> = {};
+    const choice: Choice = {};
     let w = 1;
     let c = code;
-    for (const p of physical) {
-      const i = c % 3;
-      c = Math.floor(c / 3);
+    physical.forEach((p, j) => {
+      const i = c % sizes[j]!;
+      c = Math.floor(c / sizes[j]!);
       choice[p] = i;
-      w *= BRANCH_WEIGHTS[i]!;
-    }
-    const haz = hazardFor(choice);
-    slipFactors.forEach((sf, is) => {
-      bases.push(haz);
-      factors.push(sf);
-      wList.push(w * slipWeights[is]!);
+      w *= sets[p][i]!.weight;
     });
+    const haz = hazardFor(choice);
+    for (const sb of slipSet) {
+      bases.push(haz);
+      factors.push(sb.value);
+      wList.push(w * sb.weight);
+    }
   }
   const n = wList.length;
   const wTotal = wList.reduce((a, b) => a + b, 0);
@@ -304,17 +355,25 @@ export function runLogicTree(
     bestAtRP[k] = { rp475: pgaAtRate(pga, central[k], RP_475), rp2475: pgaAtRate(pga, central[k], RP_2475) };
   }
 
-  // One-at-a-time: each enabled input at its low / high branch, rest central.
+  // One-at-a-time: each input at its lowest / highest branch value, every
+  // other input at its best estimate.
   const sensitivity: Sensitivity[] = enabled.map((p) => {
-    const at = (i: 0 | 2): Record<ModelKey, number[]> => {
+    const set = sets[p];
+    let iLo = 0;
+    let iHi = 0;
+    set.forEach((b, i) => {
+      if (b.value < set[iLo]!.value) iLo = i;
+      if (b.value > set[iHi]!.value) iHi = i;
+    });
+    const at = (i: number): Record<ModelKey, number[]> => {
       if (p !== 'slip') return hazardFor({ [p]: i });
-      const sf = slipFactors[i]!;
+      const sf = set[i]!.value;
       const out = {} as Record<ModelKey, number[]>;
       for (const k of MODEL_KEYS) out[k] = central[k].map((v) => v * sf);
       return out;
     };
-    const lo = at(0);
-    const hi = at(2);
+    const lo = at(iLo);
+    const hi = at(iHi);
     const byModel = {} as Sensitivity['byModel'];
     for (const k of MODEL_KEYS) {
       byModel[k] = {
@@ -322,11 +381,8 @@ export function runLogicTree(
         rp2475: [pgaAtRate(pga, lo[k], RP_2475), pgaAtRate(pga, hi[k], RP_2475)],
       };
     }
-    if (p === 'mmax') {
-      const base = fi.lockMax ? scalingMagnitude(paramsFromInputs(fi)) : fi.Mmax;
-      return { param: p, lowValue: base + values.mmax[0], highValue: base + values.mmax[2], byModel };
-    }
-    return { param: p, lowValue: values[p][0], highValue: values[p][2], byModel };
+    const abs = (v: number) => (p === 'mmax' ? Mbest + v : branchInputValue(p, fi, v));
+    return { param: p, lowValue: abs(set[iLo]!.value), highValue: abs(set[iHi]!.value), byModel };
   });
 
   return { pga, quantiles, nBranches: n, bandByModel, bandAtRP, bestAtRP, sensitivity };

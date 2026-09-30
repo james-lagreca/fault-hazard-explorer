@@ -5,7 +5,8 @@ import { MODEL_KEYS } from '../engine/types';
 import type { ModelKey } from '../engine/types';
 import { MAX_WIDTH_KM } from '../engine/geometry';
 import { MODEL_META, renderMFD, renderHazard, renderDeagg, renderTornado, resizePlots } from './plots';
-import { applyPreset, readState, readTree, syncLabels } from './controls';
+import { applyPreset, readState, syncLabels } from './controls';
+import { initTreeEditor, readTree, refreshTreeLabels } from './treeEditor';
 
 const shown: Record<ModelKey, boolean> = { GR: true, TGR: true, CHAR: true, MMAX: true };
 let deaggRP: '475' | '2475' = '475';
@@ -31,6 +32,7 @@ function render(): void {
   const { params: p, geom, inputs } = readState();
   const r = compute(p);
   const tree = readTree();
+  refreshTreeLabels(inputs);
   const u = Object.keys(tree).length > 0 ? runLogicTree(inputs, tree) : null;
 
   renderMFD(mfdEl, r, shown);
@@ -103,12 +105,13 @@ export function initHazardTool(): void {
       render();
     });
   };
-  const treeIds = ['slip', 'dip', 'thickness', 'b', 'mmax'].flatMap((k) => [`lt_${k}`, `lt_${k}_on`]);
-  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel', 'band', 'tormodel', ...treeIds];
+  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel', 'band', 'tormodel'];
   for (const id of inputs) {
     const el = $(id);
     if (el) el.addEventListener('input', schedule);
   }
+  const ltEl = $('lteditor');
+  if (ltEl) initTreeEditor(ltEl, schedule);
 
   document.querySelectorAll<HTMLButtonElement>('.chip').forEach((c) =>
     c.addEventListener('click', () => {
