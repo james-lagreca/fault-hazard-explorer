@@ -15,11 +15,6 @@
           <button class="chip on" data-m="CHAR" aria-pressed="true"><span class="dot"></span>Characteristic</button>
           <button class="chip on" data-m="MMAX" aria-pressed="true"><span class="dot"></span>M<sub>max</sub></button>
         </div>
-        <label class="check"><input type="checkbox" id="band" checked>
-          Show 15–85% hazard uncertainty</label>
-        <p class="note">Weighted fractiles over a 27-branch logic tree: slip rate ×/÷&nbsp;2,
-          b&nbsp;±&nbsp;0.15, M<sub>max</sub>&nbsp;±&nbsp;0.2 (5th/50th/95th, weights
-          0.185/0.63/0.185).</p>
       </div>
 
       <div class="card">
@@ -82,6 +77,28 @@
       </div>
 
       <div class="card">
+        <p class="eyebrow">Logic tree · epistemic uncertainty</p>
+        <div class="ctl lt"><div class="ltrow"><label class="ltname"><input type="checkbox" id="lt_slip_on" checked>Slip rate</label><span class="val" id="vlt_slip">×/÷ 2.0</span></div>
+          <input type="range" id="lt_slip" aria-label="Slip rate spread" min="1.2" max="4" step="0.1" value="2"></div>
+        <div class="ctl lt"><div class="ltrow"><label class="ltname"><input type="checkbox" id="lt_dip_on" checked>Dip</label><span class="val" id="vlt_dip">± 15°</span></div>
+          <input type="range" id="lt_dip" aria-label="Dip spread" min="2" max="30" step="1" value="15"></div>
+        <div class="ctl lt"><div class="ltrow"><label class="ltname"><input type="checkbox" id="lt_thickness_on">Seismogenic thickness</label><span class="val" id="vlt_thickness">± 3 km</span></div>
+          <input type="range" id="lt_thickness" aria-label="Seismogenic thickness spread" min="1" max="8" step="1" value="3"></div>
+        <div class="ctl lt"><div class="ltrow"><label class="ltname"><input type="checkbox" id="lt_b_on" checked>b-value</label><span class="val" id="vlt_b">± 0.15</span></div>
+          <input type="range" id="lt_b" aria-label="b-value spread" min="0.05" max="0.3" step="0.01" value="0.15"></div>
+        <div class="ctl lt"><div class="ltrow"><label class="ltname"><input type="checkbox" id="lt_mmax_on" checked>M<sub>max</sub></label><span class="val" id="vlt_mmax">± 0.20</span></div>
+          <input type="range" id="lt_mmax" aria-label="Mmax spread" min="0.05" max="0.5" step="0.01" value="0.2"></div>
+        <label class="check"><input type="checkbox" id="band" checked>
+          Shade the 15–85% band on the hazard plot</label>
+        <p class="note">Each ticked input takes three branches: its 5th / 50th / 95th
+          percentiles (spread set by the slider) weighted 0.185 / 0.63 / 0.185. The full
+          tree (<span id="vlt_n">81 branches</span>) is collapsed to weighted 15th and 85th
+          percentile curves. A dip or thickness branch changes the width, area, moment
+          rate, scaling M<sub>max</sub> and R<sub>rup</sub> together; with M<sub>max</sub>
+          locked, its branches offset the scaling magnitude.</p>
+      </div>
+
+      <div class="card">
         <p class="eyebrow">Presets</p>
         <div class="presets">
           <button class="preset" data-p="se">SE Australia (SCR)</button>
@@ -104,6 +121,22 @@
           <button class="rpbtn" data-rp="2475" aria-pressed="false">2475 yr</button>
         </div>
         <div id="deagg" class="plot plot-short"></div>
+      </div>
+
+      <div class="card plot-card tor-card">
+        <div class="tor-row">
+          <select id="tormodel" aria-label="Model for the sensitivity chart">
+            <option value="GR">GR (no cap)</option>
+            <option value="TGR" selected>Truncated GR</option>
+            <option value="CHAR">Characteristic</option>
+            <option value="MMAX">Mₘₐₓ</option>
+          </select>
+          <div class="rp-group" id="torrp" role="group" aria-label="Sensitivity return period">
+            <button class="rpbtn on" data-rp="475" aria-pressed="true">475 yr</button>
+            <button class="rpbtn" data-rp="2475" aria-pressed="false">2475 yr</button>
+          </div>
+        </div>
+        <div id="tornado" class="plot plot-tornado"></div>
       </div>
 
       <div class="tiles">
@@ -281,6 +314,17 @@
   .rpbtn:hover:not(.on) { background: var(--panel); }
   .rpbtn.on { background: var(--navy); color: #fff; }
   .rpbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  /* tornado: controls sit in flow above the plot so they never cover its title */
+  .tor-row { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.15rem 0.25rem 0; }
+  .tor-row select { width: auto; padding: 0.25rem 0.4rem; font-size: 0.68rem; }
+  .plot-tornado { height: 300px; }
+  @media (max-width: 860px) { .plot-tornado { height: 320px; } }
+  .rp-group { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: #fff; }
+
+  /* logic-tree rows */
+  .ltrow { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.78rem; color: var(--ink-secondary); }
+  .ltname { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; user-select: none; }
+  .ltname input { accent-color: var(--primary); width: 14px; height: 14px; margin: 0; }
 
   /* readout */
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; }

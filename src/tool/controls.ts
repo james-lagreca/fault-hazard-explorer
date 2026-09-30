@@ -5,6 +5,8 @@
 // (positive = hanging-wall side) sets the rupture distance.
 
 import type { GmpeKey, Params, ScalingKey } from '../engine/types';
+import { paramsFromInputs, TREE_PARAMS } from '../engine/uncertainty';
+import type { FaultInputs, LogicTree, TreeParam } from '../engine/uncertainty';
 import { widthFromDip, rrupFromTrace } from '../engine/geometry';
 import type { SiteGeometry } from '../engine/geometry';
 
@@ -30,6 +32,8 @@ export interface Geometry extends SiteGeometry {
 export interface ToolState {
   params: Params;
   geom: Geometry;
+  /** The raw fault description the logic tree perturbs. */
+  inputs: FaultInputs;
 }
 
 function readGeometry(): Geometry {
@@ -42,24 +46,42 @@ function readGeometry(): Geometry {
 }
 
 export function readState(): ToolState {
-  const lockMax = ($('lockmax') as HTMLInputElement).checked;
   const geom = readGeometry();
-  const params: Params = {
+  const inputs: FaultInputs = {
     b: +$('b').value,
     slip: slipFromSlider(+$('slip').value),
     L: +$('len').value,
-    W: geom.W,
+    dip: geom.dip,
+    thickness: geom.thickness,
+    ztor: geom.ztor,
+    x: geom.x,
     Mmin: +$('mmin').value,
     Mmax: +$('mmax').value,
-    lockMax,
-    R: geom.rrup,
+    lockMax: ($('lockmax') as HTMLInputElement).checked,
     vs30: +$('vs30').value,
     gmpe: ($('gmpe') as unknown as HTMLSelectElement).value as GmpeKey,
     scaling: ($('scalerel') as unknown as HTMLSelectElement).value as ScalingKey,
     binWidth: DISPLAY_BIN_WIDTH,
   };
-  return { params, geom };
+  return { params: paramsFromInputs(inputs), geom, inputs };
 }
+
+/** Logic-tree controls: each enabled input's spread (checkbox + slider per row). */
+export function readTree(): LogicTree {
+  const tree: LogicTree = {};
+  for (const p of TREE_PARAMS) {
+    if (($(`lt_${p}_on`) as HTMLInputElement | null)?.checked) tree[p] = +$(`lt_${p}`).value;
+  }
+  return tree;
+}
+
+const TREE_UNITS: Record<TreeParam, (v: number) => string> = {
+  slip: (v) => '×/÷ ' + v.toFixed(1),
+  dip: (v) => '± ' + v.toFixed(0) + '°',
+  thickness: (v) => '± ' + v.toFixed(0) + ' km',
+  b: (v) => '± ' + v.toFixed(2),
+  mmax: (v) => '± ' + v.toFixed(2),
+};
 
 export function syncLabels(): void {
   const set = (id: string, html: string) => {
@@ -79,6 +101,14 @@ export function syncLabels(): void {
     (g.x > 0 ? '+' : '') + g.x + ' <span class="u">km · ' + g.side + '</span>',
   );
   set('vvs30', $('vs30').value + ' <span class="u">m/s</span>');
+  for (const p of TREE_PARAMS) {
+    const on = ($(`lt_${p}_on`) as HTMLInputElement | null)?.checked ?? false;
+    const slider = $(`lt_${p}`);
+    if (slider) slider.disabled = !on;
+    set(`vlt_${p}`, TREE_UNITS[p](+slider.value));
+  }
+  const n = TREE_PARAMS.filter((p) => ($(`lt_${p}_on`) as HTMLInputElement | null)?.checked).length;
+  set('vlt_n', n === 0 ? 'no inputs varied' : `${3 ** n} branches`);
 }
 
 export interface Preset {

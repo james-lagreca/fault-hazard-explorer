@@ -7,7 +7,8 @@ import { thingbaijam2017Reverse, wc1994 } from '../src/engine/scaling';
 import { deaggregate, hazardCurve, ncdf } from '../src/engine/hazard';
 import { makeGmm } from '../src/engine/gmpe';
 import { compute, MODEL_KEYS } from '../src/engine/index';
-import { hazardBands, weightedQuantile } from '../src/engine/uncertainty';
+import { branchValues, paramsFromInputs, runLogicTree, weightedQuantile } from '../src/engine/uncertainty';
+import type { FaultInputs } from '../src/engine/uncertainty';
 
 describe('widthFromDip', () => {
   it('vertical fault: W equals the seismogenic thickness', () => {
@@ -103,11 +104,12 @@ describe('scaling selection in compute()', () => {
   });
 });
 
-describe('hazardBands (epistemic fractiles)', () => {
-  const p = {
-    b: 1.0, slip: 0.1, L: 60, W: 18, Mmin: 4.5, Mmax: 7.0, lockMax: true,
-    R: 10, vs30: 760, gmpe: 'allen' as const, scaling: 'wc94' as const, binWidth: 0.05,
+describe('logic tree (epistemic fractiles + sensitivity)', () => {
+  const fi: FaultInputs = {
+    b: 1.0, slip: 0.3, L: 40, dip: 45, thickness: 15, ztor: 0, x: 10, Mmin: 5.0, Mmax: 7.0,
+    lockMax: true, vs30: 760, gmpe: 'allen', scaling: 'wc94', binWidth: 0.05,
   };
+  const all = { slip: 2, dip: 15, thickness: 3, b: 0.15, mmax: 0.2 };
 
   it('weightedQuantile matches hazardlib quantile_curve interpolation', () => {
     // cum weights 0.2, 0.7, 1.0 over sorted [1, 2, 3]
@@ -116,19 +118,56 @@ describe('hazardBands (epistemic fractiles)', () => {
     expect(weightedQuantile([3, 1, 2], [0.3, 0.2, 0.5], 0.85)).toBeCloseTo(2.5, 12);
   });
 
-  it('brackets the best-estimate curve for every model', () => {
-    const r = compute(p);
-    const u = hazardBands(p);
+  it('paramsFromInputs derives W and Rrup from the cross-section', () => {
+    const p = paramsFromInputs(fi);
+    expect(p.W).toBeCloseTo(widthFromDip(15, 45), 12);
+    expect(p.R).toBeCloseTo(rrupFromTrace(10, 45, 0, p.W).rrup, 12);
+  });
+
+  it('slip-only tree: 15th percentile is exactly the ÷2 branch', () => {
+    const r = compute(paramsFromInputs(fi));
+    const u = runLogicTree(fi, { slip: 2 });
+    expect(u.nBranches).toBe(3);
+    for (const k of MODEL_KEYS)
+      for (let i = 0; i < r.pga.length; i++)
+        expect(u.bandByModel[k].lo[i]!).toBeCloseTo(r.hazByModel[k][i]! * 0.5, 15);
+  });
+
+  it('full tree: 3^n branches, central branch == compute(), band brackets it', () => {
+    const r = compute(paramsFromInputs(fi));
+    const u = runLogicTree(fi, all);
+    expect(u.nBranches).toBe(243);
     expect(u.pga).toEqual(r.pga);
     for (const k of MODEL_KEYS) {
+      expect(u.bestAtRP[k].rp475).toBe(r.pgaAtRP[k].rp475);
       const { lo, hi } = u.bandByModel[k];
       for (let i = 0; i < r.pga.length; i++) {
         expect(lo[i]!).toBeLessThanOrEqual(hi[i]! * (1 + 1e-12));
         expect(lo[i]!).toBeLessThanOrEqual(r.hazByModel[k][i]! * (1 + 1e-12));
         expect(hi[i]!).toBeGreaterThanOrEqual(r.hazByModel[k][i]! * (1 - 1e-12));
       }
-      // non-degenerate at the low-PGA plateau (slip ×/÷ 2 alone spreads it)
-      expect(hi[0]! / lo[0]!).toBeGreaterThan(1.2);
     }
+  });
+
+  it('sensitivity: one row per enabled input; dip moves the 475-yr motion', () => {
+    const u = runLogicTree(fi, all);
+    expect(u.sensitivity.map((s) => s.param)).toEqual(['slip', 'dip', 'thickness', 'b', 'mmax']);
+    const dip = u.sensitivity.find((s) => s.param === 'dip')!;
+    expect([dip.lowValue, dip.highValue]).toEqual([30, 60]);
+    const [lo, hi] = dip.byModel.TGR.rp475;
+    const best = u.bestAtRP.TGR.rp475!;
+    expect(lo).not.toBeNull();
+    expect(hi).not.toBeNull();
+    expect(Math.abs(lo! / best - 1)).toBeGreaterThan(0.01);
+    expect(Math.abs(hi! / best - 1)).toBeGreaterThan(0.01);
+    // higher slip rate → more hazard → larger 475-yr motion
+    const slip = u.sensitivity.find((s) => s.param === 'slip')!;
+    expect(slip.byModel.TGR.rp475[1]!).toBeGreaterThan(best);
+    expect(slip.byModel.TGR.rp475[0]!).toBeLessThan(best);
+  });
+
+  it('dip branches clamp to the physical range', () => {
+    expect(branchValues('dip', { ...fi, dip: 85 }, 15)).toEqual([70, 85, 90]);
+    expect(branchValues('dip', { ...fi, dip: 15 }, 15)).toEqual([10, 15, 30]);
   });
 });
