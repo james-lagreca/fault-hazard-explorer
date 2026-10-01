@@ -37,12 +37,15 @@ export interface FaultInputs {
   gmpe: GmpeKey;
   scaling: ScalingKey;
   binWidth?: number;
+  /** Rupture model; see Params.rupture. */
+  rupture?: 'plane' | 'floating';
+  aspectRatio?: number;
 }
 
 /** Derive engine Params (W from dip/thickness, Rrup from the cross-section). */
 export function paramsFromInputs(fi: FaultInputs): Params {
   const W = widthFromDip(fi.thickness, fi.dip);
-  const { rrup } = rrupFromTrace(fi.x, fi.dip, fi.ztor, W);
+  const { rrup, rjb } = rrupFromTrace(fi.x, fi.dip, fi.ztor, W);
   return {
     b: fi.b,
     slip: fi.slip,
@@ -52,10 +55,14 @@ export function paramsFromInputs(fi: FaultInputs): Params {
     Mmax: fi.Mmax,
     lockMax: fi.lockMax,
     R: rrup,
+    Rjb: rjb,
     vs30: fi.vs30,
     gmpe: fi.gmpe,
     scaling: fi.scaling,
     binWidth: fi.binWidth,
+    rupture: fi.rupture,
+    aspectRatio: fi.aspectRatio,
+    geom: { dip: fi.dip, ztor: fi.ztor, x: fi.x },
   };
 }
 
@@ -93,7 +100,16 @@ export interface Branch {
  * are normalized to sum to 1; omit an input (or give it no branches) to hold
  * it at its best estimate.
  */
-export type LogicTree = Partial<Record<TreeParam, Branch[]>>;
+export type LogicTree = Partial<Record<TreeParam, Branch[]>> & {
+  /** Ground-motion model branches (categorical): which GMM, and its weight. */
+  gmm?: GmmBranch[];
+};
+
+/** One ground-motion-model branch. */
+export interface GmmBranch {
+  key: GmpeKey;
+  weight: number;
+}
 
 const kb = (lo: number, mid: number, hi: number): Branch[] =>
   [lo, mid, hi].map((value, i) => ({ value, weight: KB_WEIGHTS[i]! }));
@@ -148,6 +164,13 @@ function applyBranch(fi: FaultInputs, param: TreeParam, v: number): FaultInputs 
   }
 }
 
+/** Drop zero / non-finite weights and normalize the GMM branch weights. */
+export function cleanGmmBranches(branches: GmmBranch[] | undefined): GmmBranch[] {
+  const ok = (branches ?? []).filter((b) => Number.isFinite(b.weight) && b.weight > 0);
+  const total = ok.reduce((s, b) => s + b.weight, 0);
+  return ok.map((b) => ({ key: b.key, weight: b.weight / total }));
+}
+
 /** Drop unusable branches (non-finite, non-positive weight) and normalize weights. */
 export function cleanBranches(branches: Branch[] | undefined): Branch[] {
   const ok = (branches ?? []).filter((b) => Number.isFinite(b.value) && Number.isFinite(b.weight) && b.weight > 0);
@@ -161,10 +184,15 @@ export interface HazardBand {
 }
 
 export interface Sensitivity {
-  param: TreeParam;
-  /** Absolute input values of the lowest / highest branch (for mmax: magnitudes). */
+  param: TreeParam | 'gmm';
+  /** Absolute input values of the lowest / highest branch (for mmax: magnitudes; NaN for gmm). */
   lowValue: number;
   highValue: number;
+  /**
+   * gmm only: which GMM gives the lowest / highest RP motion, per model and RP
+   * (the ordering of categorical branches depends on both).
+   */
+  labels?: Record<ModelKey, { rp475: [GmpeKey, GmpeKey]; rp2475: [GmpeKey, GmpeKey] }>;
   /** Per model: PGA (g) at the RP on the low / high branch, the rest at best estimate. */
   byModel: Record<ModelKey, { rp475: [number | null, number | null]; rp2475: [number | null, number | null] }>;
 }
@@ -268,11 +296,17 @@ export function runLogicTree(
   });
   const physical = enabled.filter((p) => p !== 'slip');
   const slipSet: Branch[] = sets.slip ?? [{ value: 1, weight: 1 }];
+  const gmmSet = cleanGmmBranches(tree.gmm);
   const Mbest = bestMmax(fi);
 
   // Branch choice per physical input: an index into its set, or -1 for the
-  // best estimate (the slider value). All -1 → exactly compute(best inputs).
-  type Choice = Partial<Record<TreeParam, number>>;
+  // best estimate (the slider value / selected GMM). All -1 → exactly
+  // compute(best inputs).
+  type Choice = Partial<Record<TreeParam | 'gmm', number>>;
+  const gmmOf = (choice: Choice): GmpeKey => {
+    const i = choice.gmm ?? -1;
+    return i < 0 ? fi.gmpe : gmmSet[i]!.key;
+  };
   const valueOf = (p: TreeParam, choice: Choice): number => {
     const i = choice[p] ?? -1;
     return i < 0 ? identityValue(p) : sets[p][i]!.value;
@@ -281,14 +315,15 @@ export function runLogicTree(
   let pga: number[] = [];
   const hazardFor = (choice: Choice): Record<ModelKey, number[]> => {
     const vals = physical.map((p) => valueOf(p, choice));
-    const key = vals.join('|');
+    const gk = gmmOf(choice);
+    const key = vals.join('|') + '|' + gk;
     const hit = cache.get(key);
     if (hit) return hit;
-    let f = fi;
+    let f: FaultInputs = { ...fi, gmpe: gk };
     physical.forEach((p, j) => {
       if (p !== 'mmax') f = applyBranch(f, p, branchInputValue(p, fi, vals[j]!));
     });
-    const exact = physical.every((p, j) => vals[j] === identityValue(p));
+    const exact = gk === fi.gmpe && physical.every((p, j) => vals[j] === identityValue(p));
     if (!exact) f = { ...f, binWidth: Math.max(fi.binWidth ?? 0.1, TREE_MIN_BIN_WIDTH) };
     const params = paramsFromInputs(f);
     const dm = physical.includes('mmax') ? valueOf('mmax', choice) : 0;
@@ -309,17 +344,19 @@ export function runLogicTree(
   const bases: Record<ModelKey, number[]>[] = [];
   const factors: number[] = [];
   const wList: number[] = [];
-  const sizes = physical.map((p) => sets[p].length);
+  const dims: (TreeParam | 'gmm')[] = gmmSet.length > 0 ? [...physical, 'gmm'] : physical;
+  const weightOf = (d: TreeParam | 'gmm', i: number) => (d === 'gmm' ? gmmSet[i]! : sets[d][i]!).weight;
+  const sizes = dims.map((d) => (d === 'gmm' ? gmmSet.length : sets[d].length));
   const nPhys = sizes.reduce((a, b) => a * b, 1);
   for (let code = 0; code < nPhys; code++) {
     const choice: Choice = {};
     let w = 1;
     let c = code;
-    physical.forEach((p, j) => {
+    dims.forEach((d, j) => {
       const i = c % sizes[j]!;
       c = Math.floor(c / sizes[j]!);
-      choice[p] = i;
-      w *= sets[p][i]!.weight;
+      choice[d] = i;
+      w *= weightOf(d, i);
     });
     const haz = hazardFor(choice);
     for (const sb of slipSet) {
@@ -384,6 +421,33 @@ export function runLogicTree(
     const abs = (v: number) => (p === 'mmax' ? Mbest + v : branchInputValue(p, fi, v));
     return { param: p, lowValue: abs(set[iLo]!.value), highValue: abs(set[iHi]!.value), byModel };
   });
+
+  // GMM: categorical, so "low" / "high" are whichever branches give the
+  // smallest / largest RP motion for each model and RP (null = never reached,
+  // ranks lowest).
+  if (gmmSet.length > 0) {
+    const curves = gmmSet.map((_, i) => hazardFor({ gmm: i }));
+    const byModel = {} as Sensitivity['byModel'];
+    const labels = {} as NonNullable<Sensitivity['labels']>;
+    const rank = (g: number | null) => (g == null ? -Infinity : g);
+    for (const k of MODEL_KEYS) {
+      const pick = (rate: number): { pgas: [number | null, number | null]; keys: [GmpeKey, GmpeKey] } => {
+        const at = curves.map((cv) => pgaAtRate(pga, cv[k], rate));
+        let iLo = 0;
+        let iHi = 0;
+        at.forEach((g, i) => {
+          if (rank(g) < rank(at[iLo]!)) iLo = i;
+          if (rank(g) > rank(at[iHi]!)) iHi = i;
+        });
+        return { pgas: [at[iLo]!, at[iHi]!], keys: [gmmSet[iLo]!.key, gmmSet[iHi]!.key] };
+      };
+      const a = pick(RP_475);
+      const b = pick(RP_2475);
+      byModel[k] = { rp475: a.pgas, rp2475: b.pgas };
+      labels[k] = { rp475: a.keys, rp2475: b.keys };
+    }
+    sensitivity.push({ param: 'gmm', lowValue: NaN, highValue: NaN, byModel, labels });
+  }
 
   return { pga, quantiles, nBranches: n, bandByModel, bandAtRP, bestAtRP, sensitivity };
 }

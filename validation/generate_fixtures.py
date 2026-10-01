@@ -306,6 +306,133 @@ def build_gmm_fixture():
             "imt": "PGA", "gsim": "Allen2012_SS14", "rows": rows}
 
 
+# The other NSHA GMMs: (fixture id, OpenQuake gsim class name, needs vs30,
+# needs hypo_depth). Each is evaluated for PGA over a grid that crosses every
+# breakpoint in its functional form (distance hinges, Vs30 thresholds,
+# magnitude hinges), with rjb = rrup = the grid distance.
+NSHA_GMMS = [
+    ("gmm_somerville2009_noncratonic_ss14", "SomervilleEtAl2009NonCratonic_SS14", True, False),
+    ("gmm_somerville2009_yilgarn_ss14", "SomervilleEtAl2009YilgarnCraton_SS14", True, False),
+    ("gmm_drouet2015_brazil", "DrouetBrazil2015", False, False),
+    ("gmm_drouet2015_brazil_depth", "DrouetBrazil2015withDepth", False, True),
+    ("gmm_rietbrock_edwards2019", "RietbrockEdwards2019Mean", False, False),
+    ("gmm_eshm20_craton", "ESHM20Craton", True, False),
+    ("gmm_atkinson_boore2006_mod2011", "AtkinsonBoore2006Modified2011", True, False),
+]
+GRID_MAGS = [4.5, 5.0, 5.5, 6.0, 6.2, 6.4, 6.5, 7.0, 7.5]
+GRID_DISTS = [0.0, 0.5, 1.0, 3.0, 5.0, 10.0, 20.0, 40.0, 50.0, 60.0, 80.0, 120.0, 150.0, 250.0]
+GRID_VS30 = [150.0, 250.0, 319.0, 360.0, 500.0, 600.0, 760.0, 865.0, 1100.0, 1300.0, 1600.0,
+             2100.0, 2995.0, 3000.0]
+GRID_HYPO = [3.0, 7.0, 15.0]
+
+
+def build_nsha_gmm_fixture(fid, gsim_name, needs_vs30, needs_hypo):
+    """PGA ln-mean and total sigma from a real OpenQuake gsim over the grid.
+    Returns None if hazardlib is unavailable."""
+    try:
+        import numpy as np
+        import importlib.metadata as _md
+        from openquake.hazardlib.gsim import get_available_gsims
+        from openquake.hazardlib.imt import PGA
+        from openquake.hazardlib.contexts import RuptureContext
+    except Exception:
+        return None
+
+    vs30s = GRID_VS30 if needs_vs30 else [760.0]
+    hypos = GRID_HYPO if needs_hypo else [7.0]
+    combos = [(m, r, v, h) for m in GRID_MAGS for r in GRID_DISTS for v in vs30s for h in hypos]
+    n = len(combos)
+    ctx = RuptureContext()
+    ctx.mag = np.array([c[0] for c in combos])
+    ctx.rrup = np.array([c[1] for c in combos])
+    ctx.rjb = np.array([c[1] for c in combos])
+    ctx.vs30 = np.array([c[2] for c in combos])
+    ctx.hypo_depth = np.array([c[3] for c in combos])
+    ctx.rake = np.full(n, 90.0)  # AB06 style-of-faulting dummies (unused for PGA mean)
+    mean = np.zeros((1, n))
+    sig = np.zeros((1, n))
+    tau = np.zeros((1, n))
+    phi = np.zeros((1, n))
+    get_available_gsims()[gsim_name]().compute(ctx, [PGA()], mean, sig, tau, phi)
+
+    rows = [
+        {"mag": c[0], "rrup": c[1], "rjb": c[1], "vs30": c[2], "hypo": c[3],
+         "lnMean": float(mean[0, i]), "sigma": float(sig[0, i])}
+        for i, c in enumerate(combos)
+    ]
+    try:
+        ver = _md.version("openquake.engine")
+    except Exception:
+        ver = "installed"
+    return {"id": fid, "oracle": f"openquake {ver}", "imt": "PGA", "gsim": gsim_name, "rows": rows}
+
+
+# Floating ruptures: full OpenQuake hazard curves for a SimpleFaultSource
+# (TGR MFD, scaling-relation ruptures at a given aspect ratio, 1 km rupture
+# mesh) at sites around the fault. The TS engine's floating-rupture model is
+# asserted to match these within a stated tolerance (mesh discretization,
+# not formula error, sets the floor) — see tests/engine.test.ts.
+FLOATING_CASES = [
+    dict(id="hw10_allen", L=40, dip=45, thickness=15, x=10, gsim="Allen2012_SS14", ar=1.5),
+    dict(id="fw10_allen", L=40, dip=45, thickness=15, x=-10, gsim="Allen2012_SS14", ar=1.5),
+    dict(id="hw30_som09", L=40, dip=30, thickness=15, x=30, gsim="SomervilleEtAl2009NonCratonic_SS14", ar=1.5),
+    dict(id="steep60_ar1", L=60, dip=60, thickness=15, x=5, gsim="Allen2012_SS14", ar=1.0),
+]
+
+
+def build_floating_fixture():
+    try:
+        import numpy as np
+        import importlib.metadata as _md
+        from openquake.hazardlib.source import SimpleFaultSource
+        from openquake.hazardlib.mfd import EvenlyDiscretizedMFD
+        from openquake.hazardlib.scalerel.base import BaseMSR
+        from openquake.hazardlib.geo import Line, Point
+        from openquake.hazardlib.tom import PoissonTOM
+        from openquake.hazardlib.site import Site, SiteCollection
+        from openquake.hazardlib.calc.hazard_curve import calc_hazard_curves
+        from openquake.hazardlib.gsim import get_available_gsims
+        from openquake.hazardlib import const
+    except Exception:
+        return None
+
+    km_per_deg = 6371.0 * math.pi / 180.0  # OpenQuake's spherical earth
+
+    class WC94Inverse(BaseMSR):
+        """Inverse of the tool's area→M relation (a full-fault rupture is exactly Mmax)."""
+        def get_median_area(self, mag, rake):
+            return 10.0 ** ((mag - 4.07) / 0.98)
+
+        def get_std_dev_area(self, mag, rake):
+            return 0.0
+
+    levels = [0.001 * 3000 ** (i / 160) for i in range(161)]
+    trt = const.TRT.STABLE_CONTINENTAL
+    cases = []
+    for c in FLOATING_CASES:
+        c = {"b": 1.0, "slip": 0.3, "Mmin": 5.0, "mesh": 1.0, **c}
+        W = min(c["thickness"] / math.sin(math.radians(c["dip"])), 50.0)
+        Mmax = wc1994(c["L"] * W)
+        mfd = build_mfd("TGR", c["b"], c["Mmin"], Mmax, DEFAULT_BIN_WIDTH, moment_rate(c["L"], W, c["slip"]))
+        src = SimpleFaultSource(
+            c["id"], c["id"], trt, EvenlyDiscretizedMFD(mfd["mids"][0], DEFAULT_BIN_WIDTH, mfd["rates"]),
+            c["mesh"], WC94Inverse(), c["ar"], PoissonTOM(1.0), 0.0, c["thickness"],
+            Line([Point(0.0, 0.0), Point(0.0, c["L"] / km_per_deg)]), c["dip"], 90.0)
+        # Trace runs north, so the plane dips east: +x is the hanging wall.
+        site = Site(Point(c["x"] / km_per_deg, (c["L"] / 2) / km_per_deg), vs30=760.0,
+                    vs30measured=True, z1pt0=40.0, z2pt5=1.0)
+        poes = calc_hazard_curves([src], SiteCollection([site]), {"PGA": levels},
+                                  {trt: get_available_gsims()[c["gsim"]]()}, truncation_level=99.0)
+        p = np.clip(np.asarray(poes["PGA"][0], dtype=float), 0.0, 1.0 - 1e-16)
+        cases.append({**c, "W": W, "Mmax": Mmax, "lambda": (-np.log1p(-p)).tolist()})
+    try:
+        ver = _md.version("openquake.engine")
+    except Exception:
+        ver = "installed"
+    return {"id": "hazard_floating", "oracle": f"openquake {ver}", "imt": "PGA",
+            "pga": levels, "cases": cases}
+
+
 def main():
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     oracle_name, check = hazardlib_oracle()
@@ -325,6 +452,23 @@ def main():
         print(f"  wrote {out.relative_to(FIXTURE_DIR.parent.parent)} ({len(gmm['rows'])} rows)")
     else:
         print("  (skipped GMM fixture — hazardlib unavailable)")
+
+    for fid, name, needs_vs30, needs_hypo in NSHA_GMMS:
+        fx = build_nsha_gmm_fixture(fid, name, needs_vs30, needs_hypo)
+        if fx is None:
+            print(f"  (skipped {fid} — hazardlib unavailable)")
+            continue
+        out = FIXTURE_DIR / f"{fid}.json"
+        out.write_text(json.dumps(fx, indent=2) + "\n")
+        print(f"  wrote {out.relative_to(FIXTURE_DIR.parent.parent)} ({len(fx['rows'])} rows)")
+
+    fl = build_floating_fixture()
+    if fl is not None:
+        out = FIXTURE_DIR / "hazard_floating.json"
+        out.write_text(json.dumps(fl, indent=2) + "\n")
+        print(f"  wrote {out.relative_to(FIXTURE_DIR.parent.parent)} ({len(fl['cases'])} cases)")
+    else:
+        print("  (skipped floating-rupture fixture — hazardlib unavailable)")
 
     if check is None:
         print("\nNOTE: OpenQuake not installed — fixtures are PROVISIONAL.")

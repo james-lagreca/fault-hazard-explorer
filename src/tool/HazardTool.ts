@@ -4,6 +4,7 @@ import { runLogicTree } from '../engine/uncertainty';
 import { MODEL_KEYS } from '../engine/types';
 import type { ModelKey } from '../engine/types';
 import { MAX_WIDTH_KM } from '../engine/geometry';
+import { ruptureDims, widthLimitMagnitude } from '../engine/floating';
 import { MODEL_META, renderMFD, renderHazard, renderDeagg, renderTornado, resizePlots } from './plots';
 import { applyPreset, readState, syncLabels } from './controls';
 import { initTreeEditor, readTree, refreshTreeLabels } from './treeEditor';
@@ -73,6 +74,26 @@ function render(): void {
   }
   setHTML('tbody', rows);
 
+  // Rupture model note: where ruptures hit the fault width, and the Mmax rupture.
+  const arEl = $('ar') as HTMLInputElement | null;
+  const floatingOn = p.rupture === 'floating';
+  if (arEl) arEl.disabled = !floatingOn;
+  if (floatingOn) {
+    const spec = { L: p.L, W: p.W, aspectRatio: p.aspectRatio ?? 1.5, scaling: p.scaling ?? 'wc94' };
+    const mW = widthLimitMagnitude(spec);
+    const d = ruptureDims(r.Mmax, spec);
+    setHTML(
+      'rupnote',
+      (mW < r.Mmax
+        ? `Width-limited above <b>M${mW.toFixed(2)}</b> (fault W ${p.W.toFixed(1)} km).`
+        : `Never width-limited up to M<sub>max</sub> (limit M${mW.toFixed(2)}, fault W ${p.W.toFixed(1)} km).`) +
+        ` M<sub>max</sub> ${r.Mmax.toFixed(2)} rupture: ${d.length.toFixed(0)} × ${d.width.toFixed(0)} km` +
+        (d.length >= p.L - 1e-6 ? ' (fills the fault)' : '') + '.',
+    );
+  } else {
+    setHTML('rupnote', '');
+  }
+
   // Scaling + segmentation notes.
   const widthCapped = geom.W >= MAX_WIDTH_KM;
   setHTML(
@@ -105,7 +126,7 @@ export function initHazardTool(): void {
       render();
     });
   };
-  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel', 'band', 'tormodel'];
+  const inputs = ['b', 'slip', 'len', 'dip', 'thick', 'ztor', 'mmin', 'mmax', 'r', 'vs30', 'gmpe', 'lockmax', 'scalerel', 'band', 'tormodel', 'rupmodel', 'ar'];
   for (const id of inputs) {
     const el = $(id);
     if (el) el.addEventListener('input', schedule);

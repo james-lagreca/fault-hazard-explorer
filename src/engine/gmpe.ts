@@ -2,10 +2,19 @@
 //
 // `allen` is the real Allen (2012) cratonic-SCR GMPE with the Seyhan & Stewart
 // (2014) site terms (as applied in Boore et al. 2014), reimplemented to match
-// OpenQuake's `Allen2012_SS14` exactly — validated against the gsim in CI.
+// OpenQuake's `Allen2012_SS14` exactly — validated against the gsim in CI. The
+// other NSHA models live in gmms.ts, each validated the same way.
 // `gen`/`scr` are uncalibrated TOY models kept for shape comparison only.
 
 import type { GmpeKey } from './types';
+import {
+  atkinsonBoore2006Modified2011,
+  drouetBrazil2015,
+  drouetBrazil2015WithDepth,
+  eshm20Craton,
+  rietbrockEdwards2019,
+  somerville2009SS14,
+} from './gmms';
 
 /** Standard gravity, m/s² (scipy.constants.g) — used by Allen 2012's unit conversion. */
 export const GRAVITY = 9.80665;
@@ -69,12 +78,12 @@ const VREF = 760;
 const SS_F1 = 0.0;
 const SS_F3 = 0.1;
 
-function linearSiteTerm(vs30: number): number {
+export function linearSiteTerm(vs30: number): number {
   const flin = vs30 > BEA14_PGA.Vc ? BEA14_PGA.Vc / VREF : vs30 / VREF;
   return BEA14_PGA.c * Math.log(flin);
 }
 
-function nonlinearSiteTerm(vs30: number, pgaRock: number): number {
+export function nonlinearSiteTerm(vs30: number, pgaRock: number): number {
   const vs = vs30 > 760 ? 760 : vs30;
   const f2 = BEA14_PGA.f4 * (Math.exp(BEA14_PGA.f5 * (vs - 360)) - Math.exp(BEA14_PGA.f5 * 400));
   return SS_F1 + f2 * Math.log((pgaRock + SS_F3) / SS_F3);
@@ -106,11 +115,44 @@ const TOY: Record<'gen' | 'scr', Toy> = {
   scr: { c0: -2.9, c1: 0.82, c2: 1.45, h: 7, sig: 0.55 },
 };
 
+/** Site and source conditions a GMM evaluator is built for. */
+export interface GmmSite {
+  /** Rupture distance, km. */
+  rrup: number;
+  /** Joyner–Boore distance, km (defaults to rrup). */
+  rjb?: number;
+  /** Vs30, m/s. */
+  vs30: number;
+  /** Hypocentral depth, km. */
+  hypoDepth?: number;
+}
+
 /** Build a GMM evaluator with distance and site conditions fixed. */
-export function makeGmm(key: GmpeKey, rrup: number, vs30: number, hypoDepth = DEFAULT_HYPO_DEPTH): GmmEval {
-  if (key === 'allen') {
-    return (mag) => allen2012SS14(mag, rrup, vs30, hypoDepth);
+export function makeGmm(key: GmpeKey, site: GmmSite): GmmEval {
+  const { rrup, vs30 } = site;
+  const rjb = site.rjb ?? rrup;
+  const hypo = site.hypoDepth ?? DEFAULT_HYPO_DEPTH;
+  switch (key) {
+    case 'allen':
+      return (mag) => allen2012SS14(mag, rrup, vs30, hypo);
+    case 'som09nc':
+      return (mag) => somerville2009SS14('noncratonic', mag, rjb, vs30);
+    case 'som09yc':
+      return (mag) => somerville2009SS14('yilgarn', mag, rjb, vs30);
+    case 'drouet15':
+      return (mag) => drouetBrazil2015(mag, rjb);
+    case 'drouet15d':
+      return (mag) => drouetBrazil2015WithDepth(mag, rjb, hypo);
+    case 're19':
+      return (mag) => rietbrockEdwards2019(mag, rjb);
+    case 'eshm20':
+      return (mag) => eshm20Craton(mag, rrup, vs30);
+    case 'ab06':
+      return (mag) => atkinsonBoore2006Modified2011(mag, rrup, vs30);
+    case 'gen':
+    case 'scr': {
+      const t = TOY[key];
+      return (mag) => ({ lnMean: t.c0 + t.c1 * mag - t.c2 * Math.log(rrup + t.h), sigma: t.sig });
+    }
   }
-  const t = TOY[key];
-  return (mag) => ({ lnMean: t.c0 + t.c1 * mag - t.c2 * Math.log(rrup + t.h), sigma: t.sig });
 }

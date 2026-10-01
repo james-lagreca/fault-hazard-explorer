@@ -7,6 +7,7 @@ import { wc1994, leonard2014SCR, thingbaijam2017Reverse } from './scaling';
 import { buildMfd, cumulative, recurrence } from './mfd';
 import { makeGmm } from './gmpe';
 import { deaggregate, hazardCurve, pgaAtRate, pgaGrid } from './hazard';
+import { floatingModel } from './floating';
 import { MODEL_KEYS } from './types';
 import type { EngineResult, Mfd, ModelKey, Params, ScalingKey } from './types';
 
@@ -30,8 +31,25 @@ export function compute(params: Params): EngineResult {
   const scalingMag = scalingMagnitude(params);
   const Mmax = params.lockMax ? scalingMag : params.Mmax;
   const mRate = momentRate(params.L, params.W, params.slip);
-  const gmm = makeGmm(params.gmpe, params.R, params.vs30);
+  const gmm = makeGmm(params.gmpe, { rrup: params.R, rjb: params.Rjb, vs30: params.vs30 });
   const pga = pgaGrid();
+  const floating =
+    params.rupture === 'floating' && params.geom
+      ? floatingModel(
+          {
+            L: params.L,
+            W: params.W,
+            dip: params.geom.dip,
+            ztor: params.geom.ztor,
+            x: params.geom.x,
+            aspectRatio: params.aspectRatio ?? 1.5,
+            scaling: params.scaling ?? 'wc94',
+            gmpe: params.gmpe,
+            vs30: params.vs30,
+          },
+          pga,
+        )
+      : null;
   const mTarget = Mmax - 0.2;
 
   const mfdByModel = {} as Record<ModelKey, Mfd>;
@@ -44,7 +62,7 @@ export function compute(params: Params): EngineResult {
   for (const key of MODEL_KEYS) {
     const mfd = buildMfd(key, { b: params.b, Mmin: params.Mmin, Mmax, binWidth }, mRate);
     const cum = cumulative(mfd);
-    const haz = hazardCurve(mfd, pga, gmm);
+    const haz = floating ? floating.hazard(mfd) : hazardCurve(mfd, pga, gmm);
     mfdByModel[key] = mfd;
     cumByModel[key] = cum;
     hazByModel[key] = haz;
@@ -55,8 +73,8 @@ export function compute(params: Params): EngineResult {
     };
     pgaAtRP[key] = rp;
     deaggByModel[key] = {
-      rp475: deaggregate(mfd, gmm, rp.rp475),
-      rp2475: deaggregate(mfd, gmm, rp.rp2475),
+      rp475: floating ? floating.deaggregate(mfd, rp.rp475) : deaggregate(mfd, gmm, rp.rp475),
+      rp2475: floating ? floating.deaggregate(mfd, rp.rp2475) : deaggregate(mfd, gmm, rp.rp2475),
     };
   }
 

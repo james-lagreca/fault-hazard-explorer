@@ -24,6 +24,11 @@ export function widthFromDip(thickness: number, dipDeg: number): number {
 export interface SiteGeometry {
   /** Closest distance from the site to the rupture plane, km (Rrup). */
   rrup: number;
+  /**
+   * Joyner–Boore distance, km: horizontal distance to the plane's surface
+   * projection, x ∈ [0, W·cosδ] (0 when the site sits above the rupture).
+   */
+  rjb: number;
   /** Which side of the trace the site sits on. */
   side: 'hanging wall' | 'footwall' | 'on trace';
 }
@@ -45,6 +50,7 @@ export function rrupFromTrace(x: number, dipDeg: number, ztor: number, W: number
   const cx = t * dx;
   const cz = ztor + t * dz;
   const rrup = Math.hypot(x - cx, cz);
+  const rjb = x < 0 ? -x : x > dx ? x - dx : 0;
   const side = x > 0.5 ? 'hanging wall' : x < -0.5 ? 'footwall' : 'on trace';
-  return { rrup, side };
+  return { rrup, rjb, side };
 }

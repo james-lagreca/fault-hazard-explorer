@@ -62,6 +62,8 @@ export function readState(): ToolState {
     gmpe: ($('gmpe') as unknown as HTMLSelectElement).value as GmpeKey,
     scaling: ($('scalerel') as unknown as HTMLSelectElement).value as ScalingKey,
     binWidth: DISPLAY_BIN_WIDTH,
+    rupture: ($('rupmodel') as unknown as HTMLSelectElement).value === 'plane' ? 'plane' : 'floating',
+    aspectRatio: +$('ar').value,
   };
   return { params: paramsFromInputs(inputs), geom, inputs };
 }
@@ -84,6 +86,7 @@ export function syncLabels(): void {
     (g.x > 0 ? '+' : '') + g.x + ' <span class="u">km · ' + g.side + '</span>',
   );
   set('vvs30', $('vs30').value + ' <span class="u">m/s</span>');
+  set('var', (+$('ar').value).toFixed(1));
 }
 
 export interface Preset {
