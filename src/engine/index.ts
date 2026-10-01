@@ -30,7 +30,7 @@ export function compute(params: Params): EngineResult {
   const scalingMag = scalingMagnitude(params);
   const Mmax = params.lockMax ? scalingMag : params.Mmax;
   const mRate = momentRate(params.L, params.W, params.slip);
-  const gmm = makeGmm(params.gmpe, params.R, params.vs30);
+  const gmm = makeGmm(params.gmpe, { rrup: params.R, rjb: params.Rjb, vs30: params.vs30 });
   const pga = pgaGrid();
   const mTarget = Mmax - 0.2;
 

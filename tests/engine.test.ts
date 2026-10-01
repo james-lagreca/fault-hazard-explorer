@@ -11,6 +11,15 @@ import { compute } from '../src/engine/index';
 import { MODEL_KEYS } from '../src/engine/types';
 import { leonard2014SCR } from '../src/engine/scaling';
 import { allen2012SS14 } from '../src/engine/gmpe';
+import type { GmmPrediction } from '../src/engine/gmpe';
+import {
+  atkinsonBoore2006Modified2011,
+  drouetBrazil2015,
+  drouetBrazil2015WithDepth,
+  eshm20Craton,
+  rietbrockEdwards2019,
+  somerville2009SS14,
+} from '../src/engine/gmms';
 import type { Params } from '../src/engine/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -115,3 +124,33 @@ describe.runIf(gmmFx)('Allen2012_SS14 GMM ↔ OpenQuake', () => {
     }
   });
 });
+
+// --- The other NSHA GMMs vs their OpenQuake gsims -----------------------------
+interface NshaGmmFixture {
+  oracle: string;
+  gsim: string;
+  rows: { mag: number; rrup: number; rjb: number; vs30: number; hypo: number; lnMean: number; sigma: number }[];
+}
+const NSHA_GMMS: [string, (r: NshaGmmFixture['rows'][number]) => GmmPrediction][] = [
+  ['gmm_somerville2009_noncratonic_ss14', (r) => somerville2009SS14('noncratonic', r.mag, r.rjb, r.vs30)],
+  ['gmm_somerville2009_yilgarn_ss14', (r) => somerville2009SS14('yilgarn', r.mag, r.rjb, r.vs30)],
+  ['gmm_drouet2015_brazil', (r) => drouetBrazil2015(r.mag, r.rjb)],
+  ['gmm_drouet2015_brazil_depth', (r) => drouetBrazil2015WithDepth(r.mag, r.rjb, r.hypo)],
+  ['gmm_rietbrock_edwards2019', (r) => rietbrockEdwards2019(r.mag, r.rjb)],
+  ['gmm_eshm20_craton', (r) => eshm20Craton(r.mag, r.rrup, r.vs30)],
+  ['gmm_atkinson_boore2006_mod2011', (r) => atkinsonBoore2006Modified2011(r.mag, r.rrup, r.vs30)],
+];
+for (const [id, fn] of NSHA_GMMS) {
+  const path = join(fixtureDir, `${id}.json`);
+  const fx: NshaGmmFixture | null = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as NshaGmmFixture) : null;
+  describe.runIf(fx)(`${fx?.gsim ?? id} GMM ↔ OpenQuake`, () => {
+    it(`PGA ln-mean + sigma match the gsim at all ${fx?.rows.length} grid points`, () => {
+      for (const row of fx!.rows) {
+        const p = fn(row);
+        if (!relClose(p.lnMean, row.lnMean) || !relClose(p.sigma, row.sigma))
+          throw new Error(`${id} mismatch at ${JSON.stringify(row)}: got ${p.lnMean}, ${p.sigma}`);
+      }
+    });
+  });
+}
+

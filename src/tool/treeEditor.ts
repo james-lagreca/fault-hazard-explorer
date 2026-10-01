@@ -10,7 +10,9 @@ import {
   branchInputValue,
   identityValue,
 } from '../engine/uncertainty';
-import type { Branch, FaultInputs, LogicTree, TreeParam } from '../engine/uncertainty';
+import type { Branch, FaultInputs, GmmBranch, LogicTree, TreeParam } from '../engine/uncertainty';
+import { GMPE_META, REAL_GMPES } from '../engine/types';
+import type { GmpeKey } from '../engine/types';
 
 const MAX_BRANCHES = 5;
 
@@ -43,6 +45,14 @@ interface InputState {
 const state = {} as Record<TreeParam, InputState>;
 for (const p of TREE_PARAMS) state[p] = { on: DEFAULT_ON[p], branches: DEFAULT_TREE[p].map((b) => ({ ...b })) };
 
+// Ground-motion models: a categorical branch set (which GMM + weight). Off by
+// default; equal weights over the NSHA candidates until you set your own.
+const DEFAULT_GMMS: GmpeKey[] = ['allen', 'som09nc', 'drouet15', 're19', 'eshm20'];
+const gmmState: { on: boolean; branches: GmmBranch[] } = {
+  on: false,
+  branches: DEFAULT_GMMS.map((key) => ({ key, weight: Number((1 / DEFAULT_GMMS.length).toFixed(4)) })),
+};
+
 let root: HTMLElement | null = null;
 let notify: () => void = () => {};
 let lastInputs: FaultInputs | null = null;
@@ -51,6 +61,7 @@ let lastInputs: FaultInputs | null = null;
 export function readTree(): LogicTree {
   const tree: LogicTree = {};
   for (const p of TREE_PARAMS) if (state[p].on) tree[p] = state[p].branches.map((b) => ({ ...b }));
+  if (gmmState.on) tree.gmm = gmmState.branches.map((b) => ({ ...b }));
   return tree;
 }
 
@@ -89,7 +100,42 @@ function sectionHTML(p: TreeParam): string {
   </div>`;
 }
 
-function renderSection(p: TreeParam): void {
+function gmmSectionHTML(): string {
+  const s = gmmState;
+  const opts = (sel: GmpeKey) =>
+    REAL_GMPES.map((k) => `<option value="${k}"${k === sel ? ' selected' : ''}>${GMPE_META[k].short}</option>`).join('');
+  const rows = s.branches
+    .map(
+      (b, i) => `<tr>
+        <td><select class="ltg" data-p="gmm" data-i="${i}" aria-label="GMM branch ${i + 1}">${opts(b.key)}</select></td>
+        <td><input type="number" class="ltw" data-p="gmm" data-i="${i}" step="0.05" min="0" max="1" value="${fmtNum(b.weight)}"
+          aria-label="GMM branch ${i + 1} weight"></td>
+        <td class="ltabs" id="ltabs_gmm_${i}"></td>
+        <td><button type="button" class="ltdel" data-p="gmm" data-i="${i}" aria-label="Remove GMM branch ${i + 1}"
+          ${s.branches.length <= 1 ? 'disabled' : ''}>×</button></td>
+      </tr>`,
+    )
+    .join('');
+  return `<div class="ltsec${s.on ? '' : ' off'}" id="ltsec_gmm">
+    <div class="ltrow">
+      <label class="ltname"><input type="checkbox" class="lton" data-p="gmm"${s.on ? ' checked' : ''}>Ground-motion model</label>
+      <span class="ltsum" id="ltsum_gmm"></span>
+    </div>
+    <table class="lttab gmmtab">
+      <thead><tr><th>model</th><th>weight</th><th></th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <button type="button" class="ltadd" data-p="gmm"${s.branches.length >= REAL_GMPES.length ? ' disabled' : ''}>+ branch</button>
+  </div>`;
+}
+
+function renderSection(p: TreeParam | 'gmm'): void {
+  if (p === 'gmm') {
+    const el = document.getElementById('ltsec_gmm');
+    if (el) el.outerHTML = gmmSectionHTML();
+    refreshTreeLabels();
+    return;
+  }
   const el = document.getElementById(`ltsec_${p}`);
   if (el) el.outerHTML = sectionHTML(p);
   refreshTreeLabels();
@@ -129,6 +175,26 @@ export function refreshTreeLabels(fi: FaultInputs | null = lastInputs): void {
       cell.innerHTML = DEFS[p].fmtAbs(abs) + (b.value === identityValue(p) ? ' <span class="u">best</span>' : '');
     });
   }
+  {
+    const sum = gmmState.branches.reduce((a, b) => a + (Number.isFinite(b.weight) && b.weight > 0 ? b.weight : 0), 0);
+    const sumEl = document.getElementById('ltsum_gmm');
+    if (sumEl) {
+      const ok = Math.abs(sum - 1) < 1e-6;
+      sumEl.textContent = sum > 0 ? `Σw ${sum.toFixed(2)}${ok ? '' : ' → normalized'}` : 'no valid weights';
+      sumEl.classList.toggle('warn', !ok);
+    }
+    if (gmmState.on) {
+      const valid = gmmState.branches.filter((b) => b.weight > 0).length;
+      if (valid > 0) {
+        n *= valid;
+        any = true;
+      }
+    }
+    gmmState.branches.forEach((b, i) => {
+      const cell = document.getElementById(`ltabs_gmm_${i}`);
+      if (cell) cell.innerHTML = fi && b.key === fi.gmpe ? '<span class="u">best</span>' : '';
+    });
+  }
   const nEl = document.getElementById('vlt_n');
   if (nEl) nEl.textContent = any ? `${n} branch${n === 1 ? '' : 'es'}` : 'no inputs varied';
 }
@@ -136,13 +202,26 @@ export function refreshTreeLabels(fi: FaultInputs | null = lastInputs): void {
 export function initTreeEditor(el: HTMLElement, onChange: () => void): void {
   root = el;
   notify = onChange;
-  root.innerHTML = TREE_PARAMS.map(sectionHTML).join('');
+  root.innerHTML = TREE_PARAMS.map(sectionHTML).join('') + gmmSectionHTML();
 
   root.addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement;
-    const p = t.dataset.p as TreeParam | undefined;
+    const p = t.dataset.p as TreeParam | 'gmm' | undefined;
     if (!p) return;
     const i = Number(t.dataset.i);
+    if (p === 'gmm') {
+      if (t.classList.contains('lton')) {
+        gmmState.on = t.checked;
+        document.getElementById('ltsec_gmm')?.classList.toggle('off', !t.checked);
+      } else if (t.classList.contains('ltg')) {
+        gmmState.branches[i]!.key = (t as unknown as HTMLSelectElement).value as GmpeKey;
+      } else if (t.classList.contains('ltw')) {
+        gmmState.branches[i]!.weight = t.value === '' ? NaN : +t.value;
+      } else return;
+      refreshTreeLabels();
+      notify();
+      return;
+    }
     if (t.classList.contains('lton')) {
       state[p].on = t.checked;
       document.getElementById(`ltsec_${p}`)?.classList.toggle('off', !t.checked);
@@ -158,8 +237,21 @@ export function initTreeEditor(el: HTMLElement, onChange: () => void): void {
   root.addEventListener('click', (e) => {
     const t = (e.target as HTMLElement).closest('button');
     if (!t) return;
-    const p = t.dataset.p as TreeParam | undefined;
+    const p = t.dataset.p as TreeParam | 'gmm' | undefined;
     if (!p) return;
+    if (p === 'gmm') {
+      const g = gmmState.branches;
+      if (t.classList.contains('ltadd') && g.length < REAL_GMPES.length) {
+        // Next GMM not yet in the set, at zero weight (no effect until weighted).
+        const used = new Set(g.map((b) => b.key));
+        g.push({ key: REAL_GMPES.find((k) => !used.has(k)) ?? REAL_GMPES[0]!, weight: 0 });
+      } else if (t.classList.contains('ltdel') && g.length > 1) {
+        g.splice(Number(t.dataset.i), 1);
+      } else return;
+      renderSection('gmm');
+      notify();
+      return;
+    }
     const s = state[p];
     if (t.classList.contains('ltadd') && s.branches.length < MAX_BRANCHES) {
       // New branch: one step beyond the current highest value, zero weight

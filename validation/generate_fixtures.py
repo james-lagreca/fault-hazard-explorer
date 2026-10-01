@@ -306,6 +306,67 @@ def build_gmm_fixture():
             "imt": "PGA", "gsim": "Allen2012_SS14", "rows": rows}
 
 
+# The other NSHA GMMs: (fixture id, OpenQuake gsim class name, needs vs30,
+# needs hypo_depth). Each is evaluated for PGA over a grid that crosses every
+# breakpoint in its functional form (distance hinges, Vs30 thresholds,
+# magnitude hinges), with rjb = rrup = the grid distance.
+NSHA_GMMS = [
+    ("gmm_somerville2009_noncratonic_ss14", "SomervilleEtAl2009NonCratonic_SS14", True, False),
+    ("gmm_somerville2009_yilgarn_ss14", "SomervilleEtAl2009YilgarnCraton_SS14", True, False),
+    ("gmm_drouet2015_brazil", "DrouetBrazil2015", False, False),
+    ("gmm_drouet2015_brazil_depth", "DrouetBrazil2015withDepth", False, True),
+    ("gmm_rietbrock_edwards2019", "RietbrockEdwards2019Mean", False, False),
+    ("gmm_eshm20_craton", "ESHM20Craton", True, False),
+    ("gmm_atkinson_boore2006_mod2011", "AtkinsonBoore2006Modified2011", True, False),
+]
+GRID_MAGS = [4.5, 5.0, 5.5, 6.0, 6.2, 6.4, 6.5, 7.0, 7.5]
+GRID_DISTS = [0.0, 0.5, 1.0, 3.0, 5.0, 10.0, 20.0, 40.0, 50.0, 60.0, 80.0, 120.0, 150.0, 250.0]
+GRID_VS30 = [150.0, 250.0, 319.0, 360.0, 500.0, 600.0, 760.0, 865.0, 1100.0, 1300.0, 1600.0,
+             2100.0, 2995.0, 3000.0]
+GRID_HYPO = [3.0, 7.0, 15.0]
+
+
+def build_nsha_gmm_fixture(fid, gsim_name, needs_vs30, needs_hypo):
+    """PGA ln-mean and total sigma from a real OpenQuake gsim over the grid.
+    Returns None if hazardlib is unavailable."""
+    try:
+        import numpy as np
+        import importlib.metadata as _md
+        from openquake.hazardlib.gsim import get_available_gsims
+        from openquake.hazardlib.imt import PGA
+        from openquake.hazardlib.contexts import RuptureContext
+    except Exception:
+        return None
+
+    vs30s = GRID_VS30 if needs_vs30 else [760.0]
+    hypos = GRID_HYPO if needs_hypo else [7.0]
+    combos = [(m, r, v, h) for m in GRID_MAGS for r in GRID_DISTS for v in vs30s for h in hypos]
+    n = len(combos)
+    ctx = RuptureContext()
+    ctx.mag = np.array([c[0] for c in combos])
+    ctx.rrup = np.array([c[1] for c in combos])
+    ctx.rjb = np.array([c[1] for c in combos])
+    ctx.vs30 = np.array([c[2] for c in combos])
+    ctx.hypo_depth = np.array([c[3] for c in combos])
+    ctx.rake = np.full(n, 90.0)  # AB06 style-of-faulting dummies (unused for PGA mean)
+    mean = np.zeros((1, n))
+    sig = np.zeros((1, n))
+    tau = np.zeros((1, n))
+    phi = np.zeros((1, n))
+    get_available_gsims()[gsim_name]().compute(ctx, [PGA()], mean, sig, tau, phi)
+
+    rows = [
+        {"mag": c[0], "rrup": c[1], "rjb": c[1], "vs30": c[2], "hypo": c[3],
+         "lnMean": float(mean[0, i]), "sigma": float(sig[0, i])}
+        for i, c in enumerate(combos)
+    ]
+    try:
+        ver = _md.version("openquake.engine")
+    except Exception:
+        ver = "installed"
+    return {"id": fid, "oracle": f"openquake {ver}", "imt": "PGA", "gsim": gsim_name, "rows": rows}
+
+
 def main():
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     oracle_name, check = hazardlib_oracle()
@@ -325,6 +386,15 @@ def main():
         print(f"  wrote {out.relative_to(FIXTURE_DIR.parent.parent)} ({len(gmm['rows'])} rows)")
     else:
         print("  (skipped GMM fixture — hazardlib unavailable)")
+
+    for fid, name, needs_vs30, needs_hypo in NSHA_GMMS:
+        fx = build_nsha_gmm_fixture(fid, name, needs_vs30, needs_hypo)
+        if fx is None:
+            print(f"  (skipped {fid} — hazardlib unavailable)")
+            continue
+        out = FIXTURE_DIR / f"{fid}.json"
+        out.write_text(json.dumps(fx, indent=2) + "\n")
+        print(f"  wrote {out.relative_to(FIXTURE_DIR.parent.parent)} ({len(fx['rows'])} rows)")
 
     if check is None:
         print("\nNOTE: OpenQuake not installed — fixtures are PROVISIONAL.")

@@ -67,13 +67,28 @@
           <input type="range" id="vs30" min="150" max="1100" step="10" value="760"></div>
         <div class="ctl"><label for="gmpe">Ground-motion model</label>
           <select id="gmpe">
-            <option value="allen" selected>Allen 2012 — SE Aus. SCR (+SS14 site)</option>
-            <option value="gen">Generic active-crust (toy)</option>
-            <option value="scr">SCR hard-rock (toy)</option>
+            <optgroup label="NSHA models (validated vs OpenQuake)">
+              <option value="allen" selected>Allen 2012 — SE Aus. SCR (+SS14 site)</option>
+              <option value="som09nc">Somerville et al. 2009 — non-cratonic (+SS14)</option>
+              <option value="som09yc">Somerville et al. 2009 — Yilgarn craton (+SS14)</option>
+              <option value="drouet15">Drouet 2015 — Brazil (hard rock)</option>
+              <option value="drouet15d">Drouet 2015 — Brazil, with depth (hard rock)</option>
+              <option value="re19">Rietbrock &amp; Edwards 2019 — UK (hard rock)</option>
+              <option value="eshm20">ESHM20 craton (+NGA-East site)</option>
+              <option value="ab06">Atkinson &amp; Boore 2006 (mod. 2011)</option>
+            </optgroup>
+            <optgroup label="Toy shapes (uncalibrated)">
+              <option value="gen">Generic active-crust (toy)</option>
+              <option value="scr">SCR hard-rock (toy)</option>
+            </optgroup>
           </select></div>
-        <p class="note"><b>Allen 2012</b> is the real cratonic <code>gsim</code>, validated
-          against OpenQuake. V<sub>S30</sub> drives its Seyhan &amp; Stewart (2014) site
-          term (820&nbsp;m/s reference). The toy models ignore V<sub>S30</sub>.</p>
+        <p class="note">The NSHA models are PGA ports of the OpenQuake <code>gsim</code>s
+          (Allen2012_SS14, SomervilleEtAl2009*_SS14, DrouetBrazil2015[withDepth],
+          RietbrockEdwards2019Mean, ESHM20Craton, AtkinsonBoore2006Modified2011), each asserted
+          equal to OpenQuake 3.16.1 to 1e-9. V<sub>S30</sub> drives the SS14, NGA-East or BA08
+          site terms; the Drouet and Rietbrock &amp; Edwards models are hard-rock only and
+          ignore it. Somerville, Drouet and R&amp;E use R<sub>JB</sub>; the rest R<sub>rup</sub>.
+          Hypocentral depth is fixed at 7&nbsp;km.</p>
       </div>
 
       <div class="card">
@@ -329,10 +344,16 @@
   #lteditor :global(.lttab) { width: 100%; border-collapse: collapse; font-size: 0.72rem; table-layout: fixed; }
   #lteditor :global(.lttab th) { text-align: left; font-size: 9.5px; padding: 2px 4px; background: none; border-bottom: 1px solid var(--border); }
   #lteditor :global(.lttab th:last-child) { width: 1.6rem; }
+  #lteditor :global(.gmmtab th:first-child) { width: 52%; }
+  #lteditor :global(.gmmtab th:nth-child(3)) { width: 2.4rem; }
   #lteditor :global(.lttab td) { padding: 2px 4px 2px 0; }
   #lteditor :global(.lttab input) {
     width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 0.72rem;
     padding: 0.2rem 0.3rem; border: 1px solid var(--border-strong); border-radius: var(--radius); background: #fff; color: var(--ink);
+  }
+  #lteditor :global(.lttab select) {
+    width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 0.72rem;
+    padding: 0.2rem 0.2rem; border: 1px solid var(--border-strong); border-radius: var(--radius); background: #fff; color: var(--ink);
   }
   #lteditor :global(.lttab input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 0; }
   #lteditor :global(.ltabs) { font-family: var(--font-mono); color: var(--ink-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -23,12 +23,19 @@ The engine reproduces, bit-for-bit against OpenQuake:
 - the moment-balanced GR / truncated-GR / **YoungsCoppersmith1985** / Mmax MFDs;
 - Wells & Coppersmith (1994) and **Leonard2014_SCR** area scaling;
 - the **Allen (2012)** cratonic-SCR GMPE with the Seyhan & Stewart (2014) site
-  terms (`Allen2012_SS14`), with a Vs30 control driving the site response.
+  terms (`Allen2012_SS14`), with a Vs30 control driving the site response;
+- the other NSHA ground-motion models, PGA, each against its OpenQuake gsim:
+  `SomervilleEtAl2009NonCratonic_SS14`, `SomervilleEtAl2009YilgarnCraton_SS14`,
+  `DrouetBrazil2015`, `DrouetBrazil2015withDepth`, `RietbrockEdwards2019Mean`,
+  `ESHM20Craton` (central branch, NGA-East site model, ergodic Al Atik sigma) and
+  `AtkinsonBoore2006Modified2011` (`src/engine/gmms.ts`). Rjb-based models get
+  the Joyner–Boore distance from the same fault cross-section as Rrup.
 
 ## Epistemic uncertainty
 
 `src/engine/uncertainty.ts` runs a user-defined logic tree over the fault
-inputs — slip rate, dip, seismogenic thickness, b-value and Mmax. Each input can
+inputs — slip rate, dip, seismogenic thickness, b-value and Mmax — and over the
+ground-motion model (a categorical branch set of the NSHA GMMs with weights). Each input can
 be switched on and given 1–5 weighted branches (the tool's editor); branches
 follow the sliders — slip-rate branches are factors on the slider value, the
 rest are offsets — and weights are normalized per input. The default tree is

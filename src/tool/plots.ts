@@ -2,7 +2,7 @@
 import Plotly from 'plotly.js-dist-min';
 import type { EngineResult, ModelKey } from '../engine/types';
 import type { TreeParam, UncertaintyResult } from '../engine/uncertainty';
-import { MODEL_KEYS } from '../engine/types';
+import { GMPE_META, MODEL_KEYS } from '../engine/types';
 
 export const MODEL_META: Record<ModelKey, { name: string; color: string; dash: string }> = {
   GR: { name: 'GR (no cap)', color: '#7c8288', dash: 'dash' },
@@ -227,7 +227,8 @@ export function renderHazard(
   );
 }
 
-const TREE_SHORT: Record<TreeParam, string> = {
+const TREE_SHORT: Record<TreeParam | 'gmm', string> = {
+  gmm: 'GMM',
   slip: 'slip',
   dip: 'dip',
   thickness: 'thickness',
@@ -287,7 +288,11 @@ export function renderTornado(
   const rows = u.sensitivity
     .map((sv) => {
       const [gl, gh] = sv.byModel[model][field];
-      return { label: tornadoLabel(sv.param, sv.lowValue, sv.highValue), lo: pct(gl), hi: pct(gh), gl, gh };
+      const label =
+        sv.param === 'gmm'
+          ? `GMM ${sv.labels![model][field].map((g) => GMPE_META[g].short).join(' – ')}`
+          : tornadoLabel(sv.param, sv.lowValue, sv.highValue);
+      return { label, lo: pct(gl), hi: pct(gh), gl, gh };
     })
     .sort((a, b) => Math.abs(a.hi - a.lo) - Math.abs(b.hi - b.lo)); // biggest ends up on top
 
