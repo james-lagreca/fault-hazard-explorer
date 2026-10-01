@@ -31,6 +31,20 @@ The engine reproduces, bit-for-bit against OpenQuake:
   `AtkinsonBoore2006Modified2011` (`src/engine/gmms.ts`). Rjb-based models get
   the Joyner–Boore distance from the same fault cross-section as Rrup.
 
+## Floating ruptures
+
+`src/engine/floating.ts` implements the OpenQuake `SimpleFaultSource` recipe:
+each magnitude's rupture takes the scaling relation's median area at a chosen
+aspect ratio (L/W), is capped at the fault's down-dip width (then lengthened to
+keep the area) and at its length, and floats over the plane in 1 km steps, each
+position with its own Rrup, Rjb and centroid hypocentre. Exceedance
+probabilities are averaged over positions and cached per geometry, so they are
+shared across MFD models and logic-tree branches. A hazardlib
+`calc_hazard_curves` run on the same sources (`hazard_floating.json`) is the
+check: rates within 2% and 475/2475-yr PGA within 1% (the residual is
+OpenQuake's 1 km rupture-mesh discretization). The older whole-plane mode
+(closest distance for every magnitude, hypocentre 7 km) remains selectable.
+
 ## Epistemic uncertainty
 
 `src/engine/uncertainty.ts` runs a user-defined logic tree over the fault

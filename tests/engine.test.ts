@@ -12,6 +12,9 @@ import { MODEL_KEYS } from '../src/engine/types';
 import { leonard2014SCR } from '../src/engine/scaling';
 import { allen2012SS14 } from '../src/engine/gmpe';
 import type { GmmPrediction } from '../src/engine/gmpe';
+import { paramsFromInputs } from '../src/engine/uncertainty';
+import { pgaAtRate } from '../src/engine/hazard';
+import type { GmpeKey } from '../src/engine/types';
 import {
   atkinsonBoore2006Modified2011,
   drouetBrazil2015,
@@ -55,8 +58,11 @@ function relClose(got: number, want: number): boolean {
   return Math.abs(got - want) / Math.abs(want) < REL_TOL;
 }
 
-// MFD fixtures; GMM fixtures (gmm_*.json) have a different shape and are tested separately.
-const files = readdirSync(fixtureDir).filter((f) => f.endsWith('.json') && !f.startsWith('gmm_'));
+// MFD fixtures; GMM (gmm_*.json) and hazard (hazard_*.json) fixtures have a
+// different shape and are tested separately.
+const files = readdirSync(fixtureDir).filter(
+  (f) => f.endsWith('.json') && !f.startsWith('gmm_') && !f.startsWith('hazard_'),
+);
 
 describe('engine ↔ OpenQuake fixtures', () => {
   it('has fixtures to test', () => {
@@ -154,3 +160,45 @@ for (const [id, fn] of NSHA_GMMS) {
   });
 }
 
+
+// --- Floating ruptures vs an OpenQuake SimpleFaultSource hazard calculation ---
+// Not a 1e-9 parity check: OpenQuake measures distances to a 1 km rupture mesh
+// and rounds rupture dimensions to it, while the engine uses exact rectangles.
+// That discretization, not formula error, sets the tolerance.
+interface FloatingFixture {
+  oracle: string;
+  pga: number[];
+  cases: {
+    id: string; L: number; dip: number; thickness: number; x: number; gsim: string; ar: number;
+    b: number; slip: number; Mmin: number; lambda: number[];
+  }[];
+}
+const floatPath = join(fixtureDir, 'hazard_floating.json');
+const floatFx: FloatingFixture | null = existsSync(floatPath)
+  ? (JSON.parse(readFileSync(floatPath, 'utf8')) as FloatingFixture)
+  : null;
+const GSIM_KEY: Record<string, GmpeKey> = { Allen2012_SS14: 'allen', SomervilleEtAl2009NonCratonic_SS14: 'som09nc' };
+
+describe.runIf(floatFx)('floating ruptures ↔ OpenQuake SimpleFaultSource hazard', () => {
+  for (const c of floatFx?.cases ?? []) {
+    it(`${c.id}: λ within 2% (λ > 1e-6), 475/2475-yr PGA within 1%`, () => {
+      const r = compute(
+        paramsFromInputs({
+          b: c.b, slip: c.slip, L: c.L, dip: c.dip, thickness: c.thickness, ztor: 0, x: c.x,
+          Mmin: c.Mmin, Mmax: 7, lockMax: true, vs30: 760, gmpe: GSIM_KEY[c.gsim]!, scaling: 'wc94',
+          binWidth: 0.1, rupture: 'floating', aspectRatio: c.ar,
+        }),
+      );
+      floatFx!.pga.forEach((v, i) => expect(relClose(r.pga[i]!, v)).toBe(true));
+      const ts = r.hazByModel.TGR;
+      for (let i = 0; i < c.lambda.length; i++) {
+        if (c.lambda[i]! > 1e-6) expect(Math.abs(ts[i]! / c.lambda[i]! - 1)).toBeLessThan(0.02);
+      }
+      for (const rp of [475, 2475]) {
+        const want = pgaAtRate(r.pga, c.lambda, 1 / rp)!;
+        const got = pgaAtRate(r.pga, ts, 1 / rp)!;
+        expect(Math.abs(got / want - 1)).toBeLessThan(0.01);
+      }
+    });
+  }
+});

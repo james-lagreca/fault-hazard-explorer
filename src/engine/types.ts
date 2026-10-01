@@ -63,6 +63,16 @@ export interface Params {
   binWidth?: number;
   /** Area→magnitude scaling relation. Default 'wc94' (fixture-compatible). */
   scaling?: ScalingKey;
+  /**
+   * Rupture model. 'plane' (default): every magnitude uses the closest
+   * distance to the whole fault plane, hypocentre fixed at 7 km. 'floating':
+   * scaling-relation ruptures float over the plane (needs `geom`).
+   */
+  rupture?: 'plane' | 'floating';
+  /** Floating-rupture aspect ratio, length / width. Default 1.5. */
+  aspectRatio?: number;
+  /** Fault-plane geometry for floating ruptures. */
+  geom?: { dip: number; ztor: number; x: number };
 }
 
 /** Incremental-rate description of a single MFD (one model). */

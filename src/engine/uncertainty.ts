@@ -37,6 +37,9 @@ export interface FaultInputs {
   gmpe: GmpeKey;
   scaling: ScalingKey;
   binWidth?: number;
+  /** Rupture model; see Params.rupture. */
+  rupture?: 'plane' | 'floating';
+  aspectRatio?: number;
 }
 
 /** Derive engine Params (W from dip/thickness, Rrup from the cross-section). */
@@ -57,6 +60,9 @@ export function paramsFromInputs(fi: FaultInputs): Params {
     gmpe: fi.gmpe,
     scaling: fi.scaling,
     binWidth: fi.binWidth,
+    rupture: fi.rupture,
+    aspectRatio: fi.aspectRatio,
+    geom: { dip: fi.dip, ztor: fi.ztor, x: fi.x },
   };
 }
 

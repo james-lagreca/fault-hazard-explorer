@@ -8,6 +8,7 @@ import { deaggregate, hazardCurve, ncdf } from '../src/engine/hazard';
 import { makeGmm } from '../src/engine/gmpe';
 import { atkinsonBoore2006Modified2011, eshm20Craton, rietbrockEdwards2019, somerville2009SS14 } from '../src/engine/gmms';
 import { REAL_GMPES } from '../src/engine/types';
+import { SCALING_AREA, ruptureDims, widthLimitMagnitude } from '../src/engine/floating';
 import { compute, MODEL_KEYS } from '../src/engine/index';
 import { DEFAULT_TREE, branchInputValue, paramsFromInputs, runLogicTree, weightedQuantile } from '../src/engine/uncertainty';
 import type { FaultInputs } from '../src/engine/uncertainty';
@@ -257,5 +258,53 @@ describe('logic tree: GMM branches', () => {
     const vals = keys.map(at);
     expect(at(kLo as (typeof keys)[number])).toBe(Math.min(...vals));
     expect(at(kHi as (typeof keys)[number])).toBe(Math.max(...vals));
+  });
+});
+
+describe('floating ruptures', () => {
+  const spec = { L: 40, W: 20, aspectRatio: 1.5, scaling: 'wc94' as const };
+
+  it('rupture dims: AR-shaped below the width limit, lengthened then length-capped above it', () => {
+    const small = ruptureDims(5.5, spec);
+    expect(small.length / small.width).toBeCloseTo(1.5, 12);
+    expect(small.widthLimited).toBe(false);
+    const mid = ruptureDims(widthLimitMagnitude(spec) + 0.1, spec);
+    expect(mid.widthLimited).toBe(true);
+    expect(mid.width).toBe(20);
+    expect(mid.length * mid.width).toBeCloseTo(SCALING_AREA.wc94(widthLimitMagnitude(spec) + 0.1), 9);
+    const big = ruptureDims(8, spec);
+    expect(big.lengthLimited).toBe(true);
+    expect([big.length, big.width]).toEqual([40, 20]);
+  });
+
+  it('width-limit magnitude inverts area = AR·W² for each scaling relation', () => {
+    for (const k of ['wc94', 'leonard14', 'tmg17'] as const) {
+      const m = widthLimitMagnitude({ ...spec, scaling: k });
+      expect(SCALING_AREA[k](m)).toBeCloseTo(1.5 * 20 ** 2, 6);
+    }
+  });
+
+  it('when every rupture fills the fault, floating equals the whole-plane model', () => {
+    // 5 km × 5 km vertical fault: every magnitude ≥ 5.5 is width- and length-capped.
+    const fi: FaultInputs = {
+      b: 1, slip: 0.5, L: 5, dip: 90, thickness: 5, ztor: 0, x: 8, Mmin: 5.5, Mmax: 6.0,
+      lockMax: false, vs30: 760, gmpe: 'som09nc', scaling: 'wc94', binWidth: 0.05,
+    };
+    const plane = compute(paramsFromInputs(fi));
+    const fl = compute(paramsFromInputs({ ...fi, rupture: 'floating' }));
+    for (let i = 0; i < plane.pga.length; i++) {
+      const want = plane.hazByModel.TGR[i]!;
+      if (want > 1e-8) expect(Math.abs(fl.hazByModel.TGR[i]! / want - 1)).toBeLessThan(1e-3);
+    }
+  });
+
+  it('floating ruptures lower near-fault hazard vs the closest-distance plane model', () => {
+    const fi: FaultInputs = {
+      b: 1, slip: 0.3, L: 40, dip: 45, thickness: 15, ztor: 0, x: 10, Mmin: 5, Mmax: 7,
+      lockMax: true, vs30: 760, gmpe: 'allen', scaling: 'wc94', binWidth: 0.05,
+    };
+    const plane = compute(paramsFromInputs(fi)).pgaAtRP.TGR.rp475!;
+    const fl = compute(paramsFromInputs({ ...fi, rupture: 'floating' })).pgaAtRP.TGR.rp475!;
+    expect(fl).toBeLessThan(plane);
   });
 });

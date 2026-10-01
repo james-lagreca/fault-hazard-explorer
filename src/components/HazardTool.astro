@@ -58,6 +58,24 @@
       </div>
 
       <div class="card">
+        <p class="eyebrow">Rupture model</p>
+        <div class="ctl"><label for="rupmodel">How ruptures sit on the fault</label>
+          <select id="rupmodel">
+            <option value="floating" selected>Floating ruptures (OQ-style)</option>
+            <option value="plane">Whole fault plane, closest distance</option>
+          </select></div>
+        <div class="ctl"><label for="ar"><span>Rupture aspect ratio (L/W)</span><span class="val" id="var">1.5</span></label>
+          <input type="range" id="ar" min="1" max="3" step="0.1" value="1.5"></div>
+        <div class="note" id="rupnote"></div>
+        <p class="note">Floating: each magnitude's rupture takes the scaling relation's median area
+          at this aspect ratio, is capped at the fault width (then lengthened) and length, and floats
+          over the plane in 1&nbsp;km steps with its own R<sub>rup</sub>, R<sub>JB</sub> and centroid
+          hypocentre — the OpenQuake <code>SimpleFaultSource</code> recipe, checked against it in CI
+          (within 2%). Whole plane: every magnitude at the closest distance to the full plane,
+          hypocentre 7&nbsp;km.</p>
+      </div>
+
+      <div class="card">
         <p class="eyebrow">Site &amp; ground motion</p>
         <div class="ctl"><label for="r">Site position vs trace<span class="val" id="vr">+10 <span class="u">km</span></span></label>
           <input type="range" id="r" min="-60" max="60" step="1" value="10"></div>
